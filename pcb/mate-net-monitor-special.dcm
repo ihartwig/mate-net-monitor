@@ -1,0 +1,9 @@
+EESchema-DOCLIB  Version 2.0
+#
+$CMP LM5085MY
+D 75V Constant On-Time PFET Buck Switching Controller, MSOP-8-EP
+K buck switching contoller
+F https://www.ti.com/lit/ds/symlink/lm5085.pdf
+$ENDCMP
+#
+#End Doc Library
