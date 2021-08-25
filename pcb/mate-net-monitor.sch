@@ -118,7 +118,7 @@ U 1 1 6127577C
 P 2250 6200
 F 0 "U1" H 2250 6767 50  0000 C CNN
 F 1 "LM5085MY" H 2250 6676 50  0000 C CNN
-F 2 "Package_SO:MSOP-8-1EP_3x3mm_P0.65mm_EP1.73x1.85mm_ThermalVias" H 2300 5750 50  0001 L CIN
+F 2 "mate-net-monitor-special:MSOP-8-1EP_3x3mm_P0.65mm_EP1.88x2mm_ThermalVias0.3mm" H 2300 5750 50  0001 L CIN
 F 3 "https://www.ti.com/lit/ds/symlink/lm5085.pdf" H 2250 6200 50  0001 C CNN
 	1    2250 6200
 	1    0    0    -1  
