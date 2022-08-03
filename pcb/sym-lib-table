@@ -1,3 +1,4 @@
 (sym_lib_table
-  (lib (name mate-net-monitor-special)(type Legacy)(uri ${KIPRJMOD}/mate-net-monitor-special.lib)(options "")(descr ""))
+  (lib (name "mate-net-monitor-special")(type "Legacy")(uri "${KIPRJMOD}/mate-net-monitor-special.lib")(options "")(descr ""))
+  (lib (name "mate-net-monitor-rescue")(type "Legacy")(uri "${KIPRJMOD}/mate-net-monitor-rescue.lib")(options "")(descr ""))
 )
