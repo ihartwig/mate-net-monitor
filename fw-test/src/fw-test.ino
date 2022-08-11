@@ -26,6 +26,7 @@ const pin_t PIN_EXP_ADC4 = A4;
 const pin_t PIN_LED = D7;
 
 // sw config
+SYSTEM_MODE(SEMI_AUTOMATIC);
 SerialLogHandler logHandler;  // default to Serial on debug USB
 typedef PacketSerial_<COBS, 0, 256> PacketSerial;
 PacketSerial mate_net_packet_serial;
@@ -103,17 +104,17 @@ void mateNetOnPacketReceived(
 // setup() runs once, when the device is first turned on.
 void setup() {
   // mate net pin setup
-  pinMode(PIN_MATE_RX, INPUT_PULLDOWN);
+  pinMode(PIN_MATE_RX, INPUT);
   pinMode(PIN_MATE_TX, OUTPUT);
   pinMode(PIN_MATE_IND, OUTPUT);
-  analogWrite(PIN_MATE_IND, 127, 5); // 50% 5Hz blink effect
+  analogWrite(PIN_MATE_IND, 127, 5);  // 50% 5Hz blink effect
   Serial1.begin(MATE_BAUD, SERIAL_8N1);
   // pinSetDriveStrength does not seem to work with analogWrite and Serial1
   // mag net pin setup
   pinMode(PIN_MAG_RX, INPUT);
   pinMode(PIN_MAG_TX, INPUT);
-  pinMode(PIN_MAG_IND, OUTPUT);
-  analogWrite(PIN_MAG_IND, 127, 5); // 50% 5Hz blink effect
+  pinMode(PIN_MAG_IND, OUTPUT);  // open-drain to vcc
+  analogWrite(PIN_MAG_IND, 127, 5);  // 50% 5Hz blink effect
   pinMode(PIN_MAG_EN, INPUT);
   // expansion pins setup
   pinMode(PIN_EXP_ADC1, INPUT);
@@ -121,7 +122,7 @@ void setup() {
   pinMode(PIN_EXP_ADC3, INPUT);
   pinMode(PIN_EXP_ADC4, INPUT);
   // debug
-  delay(1000);  // console reconnect
+  delay(2000);  // console reconnect
   Log.info(String::format("%s: %s", Time.timeStr().c_str(), "Hello world!"));
   // packet interfaces
   mate_net_packet_serial.setStream(&Serial1);
