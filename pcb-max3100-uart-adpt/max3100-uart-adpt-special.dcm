@@ -1,0 +1,9 @@
+EESchema-DOCLIB  Version 2.0
+#
+$CMP MAX3100EEE+
+D Microwire-Compatible UART, MAX3100EEE+ MAX3100EEE+, Universal Asynchronous Receiver & Transmitter IrDA 0.23MBd, 2.7  5.5 V, 16-Pin, QSOP
+K
+F http://datasheets.maximintegrated.com/en/ds/MAX3100.pdf
+$ENDCMP
+#
+#End Doc Library
