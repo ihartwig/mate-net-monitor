@@ -4,7 +4,7 @@
     "files.associations": {
         "*.ino": "cpp"
     },
-    "particle.targetDevice": "p02bad107d4kscg",
+    "particle.targetDevice": "e00fce6829f72324f45dea83",
     "particle.firmwareVersion": "3.3.0",
     "particle.targetPlatform": "boron"
 }

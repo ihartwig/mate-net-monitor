@@ -5,7 +5,11 @@ A Particle project named fw-mate-net-monitor
 This project implements the uMATE library on top of Particle Boron with a mate-net-monitor adapter board.
 
 Library modifications:
-* 
+* modify to use the Particle-provided Stream and Serial implementations
+    * replace Stream9b with Stream
+    * replace size_t write9b() with size_t write(uint16_t)
+    * replace int16_t read9b() with int read()
+* ?
 
 ## Welcome to your project!
 

@@ -79,7 +79,6 @@ CommsStatus MateNetPort::recv_data(OUT uint8_t* byte0, OUT uint8_t* data, OUT ui
         delayMicroseconds(800*2);
         
         int16_t b = 0;
-        b = ser.read() << 8;
         b = ser.read();
         if (b < 0) {
             return CommsStatus::NoData; // No data available yet
