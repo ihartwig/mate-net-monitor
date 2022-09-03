@@ -68,8 +68,6 @@ SPISettings spiSet = SPISettings(4000000, MSBFIRST, SPI_MODE0);
 // Constructor.  We need the crystal speed and the chip select pin number.
 MAX3100Serial::MAX3100Serial(uint32_t crystalFrequencykHz, pin_t csPin)
 {
-  _rx_buffer_next = 0;
-  _rx_buffer_last = 0;
   _setChipSelectPin(csPin);
   _setClockMultiplier(crystalFrequencykHz);
   SPI.begin();
@@ -146,9 +144,6 @@ void MAX3100Serial::begin(uint32_t speed)
   SPI.transfer(0xFF & (conf));
   digitalWrite(_chipSelectPin, HIGH);
   SPI.endTransaction();
-
-  // Call into fetch to clear the fifo
-  // this->fetch();
 }
 
 void MAX3100Serial::end()
@@ -156,18 +151,8 @@ void MAX3100Serial::end()
   SPI.end();
 }
 
-int MAX3100Serial::read()
-{
-  if (!available()) {
-    return -1;  // No data available
-  }
-  // read from the buffer first then update indexes
-  int c = _rx_buffer[_rx_buffer_next];
-  _rx_buffer_next = (_rx_buffer_next+1) % MAX3100_BUF_LEN;
-  return c;
-}
 
-int MAX3100Serial::_read()
+int MAX3100Serial::read()
 {
   int c = -1; // No data available.
   SPI.beginTransaction(spiSet);
@@ -185,11 +170,6 @@ int MAX3100Serial::_read()
 }
 
 int MAX3100Serial::available()
-{
-  return (_rx_buffer_last != _rx_buffer_next);
-}
-
-int MAX3100Serial::_available()
 {
   SPI.beginTransaction(spiSet);
   digitalWrite(_chipSelectPin, LOW);
@@ -240,30 +220,8 @@ void MAX3100Serial::flush()
 
 int MAX3100Serial::peek()
 {
-  if (!available()) {
-    return -1;  // No data available
-  }
-  return _rx_buffer[_rx_buffer_next];
-}
-
-int MAX3100Serial::fetch()
-{
-  // Respond to an IRQ by reading the byte into circular buffer
-  int count = 0;
-  int new_last = (_rx_buffer_last+1) % MAX3100_BUF_LEN;
-  if (new_last == _rx_buffer_next) {
-    // out of space, let the MAX3100 FIFO drop chars
-    return -2;
-  }
-  int c = 0; // start assuming there is data to be read
-  while (c != -1) {
-    c = _read();
-    if (c != -1) {
-      // add to the buffer first then update indexes
-      _rx_buffer[new_last] = c;
-      _rx_buffer_last = new_last;
-    }
-    count++;
-  }
-  return count;
+  // This is not currently implemented in the hardware.  It could be implemented
+  // with a one byte software buffer, but this would prevent /RM interrupts from
+  // firing.
+  return -1;
 }

@@ -52,9 +52,6 @@ chosen by the calling code.
 #define GCC_VERSION (__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + __GNUC_PATCHLEVEL__)
 #endif
 
-// const int MAX3100_BUF_LEN = 1500 * 2;  // borrow from ethernet + overhead
-const int MAX3100_BUF_LEN = 256;
-
 class MAX3100Serial : public Stream
 {
 public:
@@ -64,7 +61,6 @@ public:
   void begin(uint32_t speed);
   void end();
   int peek();
-  int fetch();
 
   virtual size_t write(uint8_t byte);
   virtual int read();
@@ -76,16 +72,10 @@ public:
 private:
   pin_t _chipSelectPin;
   uint16_t _clockMultiplier;
-  // circular buffer with start and end
-  uint16_t _rx_buffer[MAX3100_BUF_LEN];
-  volatile int _rx_buffer_next;
-  volatile int _rx_buffer_last;
 
   void _setChipSelectPin(pin_t csPin);
   void _setClockMultiplier(uint32_t kHz);
-  int _available();
   int _busy();
-  int _read();
 };
 
 // Arduino 0012 workaround

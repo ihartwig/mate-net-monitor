@@ -19,7 +19,6 @@
 // hw config
 // mate net pins
 // disable this RX/TX pair so it does not output 
-void mate_uart_irq();
 void mateNetOnPacketReceived(
   const void* sender,
   const uint8_t* buffer,
@@ -88,12 +87,12 @@ int mate_net_rx_pkt = 0;
 int mate_net_rx_err = 0;
 
 
-void mate_uart_irq()
-{
-  // fetch data from the max3100's fifo
-  int count = mate_uart.fetch();
-  Log.info(String::format("mate_uart.fetch()->%d", count));
-}
+// void mate_uart_irq()
+// {
+//   // fetch data from the max3100's fifo
+//   int count = mate_uart.fetch();
+//   Log.info(String::format("mate_uart.fetch()->%d", count));
+// }
 
 
 void mateNetOnPacketReceived(
@@ -128,8 +127,8 @@ void setup() {
   // mate net pin setup
   pinMode(PIN_MATE_IND, OUTPUT);
   analogWrite(PIN_MATE_IND, 127, 5);  // 50% 5Hz blink effect
-  pinMode(PIN_MATE_UART_IRQ, INPUT_PULLUP);
-  attachInterrupt(PIN_MATE_UART_IRQ, mate_uart_irq, FALLING);
+  // pinMode(PIN_MATE_UART_IRQ, INPUT_PULLUP);
+  // attachInterrupt(PIN_MATE_UART_IRQ, mate_uart_irq, FALLING);
   mate_uart.begin(MATE_UART_BAUD);
   // pinSetDriveStrength does not seem to work with analogWrite and Serial1
   // mag net pin setup
