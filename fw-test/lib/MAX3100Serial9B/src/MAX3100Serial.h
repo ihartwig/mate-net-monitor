@@ -59,6 +59,7 @@ public:
   MAX3100Serial(uint32_t crystalFrequencykHz, pin_t chipSelectPin);
   ~MAX3100Serial();
   void begin(uint32_t speed);
+  int read_conf();
   void end();
   int peek();
 
@@ -75,6 +76,7 @@ private:
 
   void _setChipSelectPin(pin_t csPin);
   void _setClockMultiplier(uint32_t kHz);
+  inline uint16_t _transfer16b(uint16_t send_buf);
   int _busy();
 };
 

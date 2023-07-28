@@ -152,17 +152,23 @@ void setup() {
 
 // loop() runs over and over again, as quickly as it can execute.
 void loop() {
-  Log.info("Hello\r\n");
-  mate_uart.write("Hello\r\n");
-  delay(1000);
+  Log.info(String::format("MAX3100 Conf: 0x%x", mate_uart.read_conf()));
+  Log.info("1234567");
+  mate_uart.write("1234");
+  delay(100);
   // debug capture of Serial1
   debug_packet_len = 0;
   while(mate_uart.available() && debug_packet_len < packet_buf_len) {
     debug_packet_buf[debug_packet_len] = mate_uart.read();
     debug_packet_len++;
   }
+  mate_uart.write("567");
+  while(mate_uart.available() && debug_packet_len < packet_buf_len) {
+    debug_packet_buf[debug_packet_len] = mate_uart.read();
+    debug_packet_len++;
+  }
   debug_packet_buf[debug_packet_len] = '\0';
-  Log.info(String::format("debug_packet_buf: %s", debug_packet_buf));
+  Log.info(String::format("debug_packet_buf[0:%d]: %s", debug_packet_len, debug_packet_buf));
   Log.info(String::format("debug_packet_buf[0]: 0x%x", debug_packet_buf[0]));
   Log.info(String::format("debug_packet_buf[1]: 0x%x", debug_packet_buf[1]));
   Log.info(String::format("debug_packet_buf[2]: 0x%x", debug_packet_buf[2]));

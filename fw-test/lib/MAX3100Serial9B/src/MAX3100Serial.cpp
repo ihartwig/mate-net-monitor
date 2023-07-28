@@ -1,7 +1,7 @@
 /*
-  $Id: MAX3100Serial.cpp,v 1.6 2018/03/07 12:40:42 ewan Exp $
   Arduino MAX3100Serial library.
-  MAX3100Serial.cpp (C) 2016 Ewan Parker.
+  MAX3100Serial.cpp (C) 2016-2018 Ewan Parker.
+  Adapted for Particle (C) 2023 Ian Hartwig.
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -63,7 +63,9 @@
 #define MAX3100_CONF_BAUD_X2_600    0b0000000000001111
 
 // Global SPI settings for all MAX3100 communications.
-SPISettings spiSet = SPISettings(4000000, MSBFIRST, SPI_MODE0);
+// Could run up to 4MHz, conservatively run at 2MHz
+SPISettings spiSet = SPISettings(2000000, MSBFIRST, SPI_MODE0);
+
 
 // Constructor.  We need the crystal speed and the chip select pin number.
 MAX3100Serial::MAX3100Serial(uint32_t crystalFrequencykHz, pin_t csPin)
@@ -73,11 +75,13 @@ MAX3100Serial::MAX3100Serial(uint32_t crystalFrequencykHz, pin_t csPin)
   SPI.begin();
 }
 
+
 // Destructor
 MAX3100Serial::~MAX3100Serial()
 {
   end();
 }
+
 
 void MAX3100Serial::_setChipSelectPin(pin_t csPin)
 {
@@ -87,12 +91,28 @@ void MAX3100Serial::_setChipSelectPin(pin_t csPin)
   pinMode(csPin, OUTPUT);
 }
 
+
 void MAX3100Serial::_setClockMultiplier(uint32_t kHz)
 {
   // Determine the clock multiplier from its frequency.
   if (kHz == 3686) _clockMultiplier = 2;    // 3.6864 MHz
   else _clockMultiplier = 1;                // 1.8432 MHz
 }
+
+
+// Wrapper for the 16-bit word transfers used by the MAX3100 exclusively
+inline uint16_t MAX3100Serial::_transfer16b(uint16_t send_buf) {
+  uint16_t read_buf = 0;
+  SPI.beginTransaction(spiSet);
+  digitalWrite(_chipSelectPin, LOW);
+  read_buf |= SPI.transfer((send_buf >> 8) & 0xFF);
+  read_buf = read_buf << 8;
+  read_buf |= SPI.transfer(send_buf & 0xFF);
+  digitalWrite(_chipSelectPin, HIGH);
+  SPI.endTransaction();
+  return read_buf;
+}
+
 
 // Set the communication rate.  Only allow "standard" rates, and default to
 // 9600 bps if the rate is nonstandard or not supported.
@@ -131,92 +151,71 @@ void MAX3100Serial::begin(uint32_t speed)
       default     : conf = MAX3100_CONF_BAUD_X1_9600; break;
     }
   }
-
-  SPI.beginTransaction(spiSet);
-  digitalWrite(_chipSelectPin, LOW);
+  // Particle: sets pin mode of SCK, MOSI, MISO, SS
+  SPI.begin(_chipSelectPin);
   // Write the configuration: /RM (read interrupt mask) and chosen baud.
   // The assumption here is that the Arduino is interested in knowing when
   // serial data arrives, rather than the terminal connected to the MAX3100's
   // USART knowing.
   //SPI.transfer16(MAX3100_CMD_WRITE_CONF | MAX3100_CONF_RM | conf);
   conf = MAX3100_CMD_WRITE_CONF | MAX3100_CONF_RM | conf;
-  SPI.transfer(0xFF & (conf >> 8));
-  SPI.transfer(0xFF & (conf));
-  digitalWrite(_chipSelectPin, HIGH);
-  SPI.endTransaction();
+  _transfer16b(conf);
 }
+
+
+int MAX3100Serial::read_conf()
+{
+  return _transfer16b(MAX3100_CMD_READ_CONF);
+}
+
 
 void MAX3100Serial::end()
 {
+  // Particle: does NOT reset the pin mode of the SPI pins.
   SPI.end();
 }
 
 
 int MAX3100Serial::read()
 {
-  int c = -1; // No data available.
-  SPI.beginTransaction(spiSet);
-  digitalWrite(_chipSelectPin, LOW);
-  // uint16_t r = SPI.transfer16(MAX3100_CMD_READ_DATA);
-  uint16_t rbuf = 0;
-  rbuf |= SPI.transfer((uint8_t)(MAX3100_CMD_READ_DATA >> 8));
-  rbuf = rbuf << 8;
-  rbuf |= SPI.transfer(0);
-  digitalWrite(_chipSelectPin, HIGH);
-  SPI.endTransaction();
-  if (rbuf & MAX3100_CONF_R)
-    c = rbuf & 0xff;
-  return c;
+  int rbuf = 0;
+  while ((rbuf & MAX3100_CONF_R) == 0) {
+    rbuf = _transfer16b(MAX3100_CMD_READ_DATA);
+  }
+  return rbuf & 0xFF;
 }
+
 
 int MAX3100Serial::available()
 {
-  SPI.beginTransaction(spiSet);
-  digitalWrite(_chipSelectPin, LOW);
-  //uint16_t conf = SPI.transfer16(MAX3100_CMD_READ_CONF);
-  uint16_t conf = 0;
-  conf |= SPI.transfer((uint8_t)(MAX3100_CMD_READ_CONF >> 8));
-  conf = conf << 8;
-  conf |= SPI.transfer(0);
-  digitalWrite(_chipSelectPin, HIGH);
-  SPI.endTransaction();
-  return (conf & MAX3100_CONF_R); // R flag is set
+  // R flag is set
+  return (_transfer16b(MAX3100_CMD_READ_CONF) & MAX3100_CONF_R);
 }
+
 
 int MAX3100Serial::_busy()
 {
-  SPI.beginTransaction(spiSet);
-  digitalWrite(_chipSelectPin, LOW);
-  //uint16_t conf = SPI.transfer16(MAX3100_CMD_READ_CONF);
-  uint16_t conf = 0;
-  conf |= SPI.transfer((uint8_t)(MAX3100_CMD_READ_CONF >> 8));
-  conf = conf << 8;
-  conf |= SPI.transfer(0);
-  digitalWrite(_chipSelectPin, HIGH);
-  SPI.endTransaction();
-  return (!(conf & MAX3100_CONF_T)); // T flag is not set
+  // T flag is not set
+  return !(_transfer16b(MAX3100_CMD_READ_CONF) & MAX3100_CONF_T);
 }
+
 
 size_t MAX3100Serial::write(uint8_t b)
 {
   // There is no buffer.  Wait for the tramsmit register to empty before
   // proceeding, otherwise the character may be lost.
   while (_busy()) {}
-  SPI.beginTransaction(spiSet);
-  digitalWrite(_chipSelectPin, LOW);
-  //SPI.transfer16(MAX3100_CMD_WRITE_DATA | b);
-  SPI.transfer((uint8_t)(MAX3100_CMD_WRITE_DATA >> 8));
-  SPI.transfer(b);
-  digitalWrite(_chipSelectPin, HIGH);
-  SPI.endTransaction();
+  _transfer16b(MAX3100_CMD_WRITE_DATA | b);
   return 1;
 }
+
 
 void MAX3100Serial::flush()
 {
   // There is no buffer.  Wait for the transmit register to empty.
   while (_busy()) {}
 }
+
 
 int MAX3100Serial::peek()
 {
