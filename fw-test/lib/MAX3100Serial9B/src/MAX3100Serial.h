@@ -52,14 +52,18 @@ chosen by the calling code.
 #define GCC_VERSION (__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + __GNUC_PATCHLEVEL__)
 #endif
 
+#define READ_BUF_SIZE 1024  // in uint16_t words
+#define WRITE_BUF_SIZE 256  // in uint16_t words
+
 class MAX3100Serial : public Stream
 {
 public:
   // public methods
-  MAX3100Serial(uint32_t crystalFrequencykHz, pin_t chipSelectPin);
+  MAX3100Serial(uint32_t crystalFrequencykHz, pin_t chipSelectPin, pin_t intPin);
   ~MAX3100Serial();
   void begin(uint32_t speed);
   int read_conf();
+  int read_data();
   void end();
   int peek();
 
@@ -70,13 +74,31 @@ public:
 
   using Print::write;
 
+  int count_irq;
+  int count_sent;
+  int count_read;
+  int count_overflow;
+
+  volatile int _write_buf_head;
+  volatile int _write_buf_tail;
+
+
 private:
   pin_t _chipSelectPin;
+  pin_t _intPin;
   uint16_t _clockMultiplier;
+  // circular buffer for reading bytes for responding to interrupts
+  uint16_t _read_buf[READ_BUF_SIZE];
+  volatile int _read_buf_head;
+  volatile int _read_buf_tail;
+  // circular buffer for writing bytes too
+  uint16_t _write_buf[WRITE_BUF_SIZE];
 
   void _setChipSelectPin(pin_t csPin);
   void _setClockMultiplier(uint32_t kHz);
   inline uint16_t _transfer16b(uint16_t send_buf);
+  void _read_buf_append(uint16_t word);
+  void _isr();
   int _busy();
 };
 

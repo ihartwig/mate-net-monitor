@@ -36,7 +36,7 @@ const pin_t PIN_LED = D7;
 
 // uarts config
 SerialLogHandler logHandler;  // default to Serial on debug USB
-MAX3100Serial mate_uart = MAX3100Serial(MATE_UART_XTAL_FREQ_KHZ, PIN_MATE_UART_CS);
+MAX3100Serial mate_uart = MAX3100Serial(MATE_UART_XTAL_FREQ_KHZ, PIN_MATE_UART_CS, PIN_MATE_UART_IRQ);
 
 // sw config
 SYSTEM_MODE(SEMI_AUTOMATIC);
@@ -139,17 +139,14 @@ void setup() {
 
 // loop() runs over and over again, as quickly as it can execute.
 void loop() {
-  Log.info(String::format("MAX3100 Conf: 0x%x", mate_uart.read_conf()));
-  Log.info("1234567");
-  mate_uart.write("1234");
+  Log.info(String::format("MAX3100 Conf: 0x%x, IRQ: %d, Sent: %d, Read: %d, Overflow: %d", mate_uart.read_conf(), mate_uart.count_irq, mate_uart.count_sent, mate_uart.count_read, mate_uart.count_overflow));
+  Log.info(String::format("MAX3100Serial._write_buf_head: %d, _write_buf_tail: %d", mate_uart._write_buf_head, mate_uart._write_buf_tail));
+  Log.info(String::format("MAX3100 IRQ: %d", digitalRead(PIN_MATE_UART_IRQ)));
+  Log.info("1234567\r\n");
+  mate_uart.write("1234567\r\n");
   delay(100);
-  // debug capture of Serial1
+  // debug capture of mate_uart
   debug_packet_len = 0;
-  while(mate_uart.available() && debug_packet_len < packet_buf_len) {
-    debug_packet_buf[debug_packet_len] = mate_uart.read();
-    debug_packet_len++;
-  }
-  mate_uart.write("567");
   while(mate_uart.available() && debug_packet_len < packet_buf_len) {
     debug_packet_buf[debug_packet_len] = mate_uart.read();
     debug_packet_len++;

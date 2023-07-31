@@ -37,6 +37,8 @@
 #define MAX3100_CONF_R              0b1000000000000000
 #define MAX3100_CONF_T              0b0100000000000000
 #define MAX3100_CONF_RM             0b0000010000000000
+#define MAX3100_CONF_TM             0b0000100000000000
+#define MAX3100_CONF_NOT_RT         0b0011111111111111
 
 // Baud rates for clock multiplier x1.
 #define MAX3100_CONF_BAUD_X1_115200 0b0000000000000000
@@ -62,14 +64,24 @@
 #define MAX3100_CONF_BAUD_X2_1200   0b0000000000001110
 #define MAX3100_CONF_BAUD_X2_600    0b0000000000001111
 
+#define MASK_8b                     0xFF
+#define MASK_9b                     0x1FF
+
 // Global SPI settings for all MAX3100 communications.
 // Could run up to 4MHz, conservatively run at 2MHz
 SPISettings spiSet = SPISettings(2000000, MSBFIRST, SPI_MODE0);
 
 
 // Constructor.  We need the crystal speed and the chip select pin number.
-MAX3100Serial::MAX3100Serial(uint32_t crystalFrequencykHz, pin_t csPin)
+MAX3100Serial::MAX3100Serial(uint32_t crystalFrequencykHz, pin_t csPin, pin_t intPin)
 {
+  // reset count metrics
+  count_irq = 0;
+  count_sent = 0;
+  count_read = 0;
+  count_overflow = 0;
+  // pre-setup hardware
+  _intPin = intPin;
   _setChipSelectPin(csPin);
   _setClockMultiplier(crystalFrequencykHz);
   SPI.begin();
@@ -105,9 +117,9 @@ inline uint16_t MAX3100Serial::_transfer16b(uint16_t send_buf) {
   uint16_t read_buf = 0;
   SPI.beginTransaction(spiSet);
   digitalWrite(_chipSelectPin, LOW);
-  read_buf |= SPI.transfer((send_buf >> 8) & 0xFF);
+  read_buf |= SPI.transfer((send_buf >> 8) & MASK_8b);
   read_buf = read_buf << 8;
-  read_buf |= SPI.transfer(send_buf & 0xFF);
+  read_buf |= SPI.transfer(send_buf & MASK_8b);
   digitalWrite(_chipSelectPin, HIGH);
   SPI.endTransaction();
   return read_buf;
@@ -153,19 +165,32 @@ void MAX3100Serial::begin(uint32_t speed)
   }
   // Particle: sets pin mode of SCK, MOSI, MISO, SS
   SPI.begin(_chipSelectPin);
-  // Write the configuration: /RM (read interrupt mask) and chosen baud.
-  // The assumption here is that the Arduino is interested in knowing when
-  // serial data arrives, rather than the terminal connected to the MAX3100's
-  // USART knowing.
-  //SPI.transfer16(MAX3100_CMD_WRITE_CONF | MAX3100_CONF_RM | conf);
-  conf = MAX3100_CMD_WRITE_CONF | MAX3100_CONF_RM | conf;
+  // Configure for /RM (R set) and /TM (T becomes set) so that _irq() can take
+  // action to send/receive words into the buffers. conf already contains baud
+  // set bits.
+  conf = MAX3100_CMD_WRITE_CONF | MAX3100_CONF_RM | MAX3100_CONF_TM | conf;
   _transfer16b(conf);
+  // add interrupt
+  pinMode(_intPin, INPUT_PULLUP);
+  attachInterrupt(_intPin, &MAX3100Serial::_isr, this, FALLING);
 }
 
 
+/* immediately read MAX3100 conf register */
 int MAX3100Serial::read_conf()
 {
   return _transfer16b(MAX3100_CMD_READ_CONF);
+}
+
+
+/* immediately read MAX3100 data register */
+int MAX3100Serial::read_data()
+{
+  int rreg = 0;
+  while ((rreg & MAX3100_CONF_R) == 0) {
+    rreg = _transfer16b(MAX3100_CMD_READ_DATA);
+  }
+  return rreg;
 }
 
 
@@ -176,20 +201,71 @@ void MAX3100Serial::end()
 }
 
 
-int MAX3100Serial::read()
+void MAX3100Serial::_read_buf_append(uint16_t word)
 {
-  int rbuf = 0;
-  while ((rbuf & MAX3100_CONF_R) == 0) {
-    rbuf = _transfer16b(MAX3100_CMD_READ_DATA);
+  // throw away this data if read_buf is full
+  if ((_read_buf_head + 1) % READ_BUF_SIZE == _read_buf_tail) {
+    count_overflow++;
+    return;
   }
-  return rbuf & 0xFF;
+  // otherwise store it in the buffer
+  _read_buf[_read_buf_head] = word;
+  _read_buf_head = (_read_buf_head + 1) % READ_BUF_SIZE;
+  // count metrics
+  count_read++;
 }
 
 
+/* respond to IRQ active for T or R set */
+void MAX3100Serial::_isr()
+{
+  count_irq++;
+  uint16_t cword = _transfer16b(MAX3100_CMD_READ_CONF);
+  // first check for new data, since this this op clears both IRQ types
+  // respond R set by reading all data
+  while (cword & MAX3100_CONF_R) {
+    uint16_t rword = _transfer16b(MAX3100_CMD_READ_DATA);
+    _read_buf_append(rword & MASK_9b);
+    // for next loop
+    cword = _transfer16b(MAX3100_CMD_READ_CONF);
+  }
+  // then check for T set which lets us write out data
+  while ((_write_buf_head != _write_buf_tail) && (cword & MAX3100_CONF_T)) {
+    // pick from the write buf to send
+    uint16_t wword = _write_buf[_write_buf_tail];
+    uint16_t rword = 0;
+    _write_buf_tail = (_write_buf_tail + 1) % WRITE_BUF_SIZE;
+    rword = _transfer16b(MAX3100_CMD_WRITE_DATA | (wword & MASK_8b));
+    // the write might have come with read data too, so capture that too
+    if (rword & MAX3100_CONF_R) {
+      _read_buf_append(rword & MASK_9b);
+    }
+    // count metrics
+    count_sent++;
+    // for next loop
+    cword = _transfer16b(MAX3100_CMD_READ_CONF);
+  }
+  return;
+}
+
+
+/* stream read from software buffer */
+int MAX3100Serial::read()
+{
+  // wait for data to enter the buffer, avoid using available()
+  while (_read_buf_head == _read_buf_tail) {}
+  // give back the next item in buffer
+  uint16_t rbuf = _read_buf[_read_buf_tail];
+  _read_buf_tail = (_read_buf_tail + 1) % READ_BUF_SIZE;
+  return rbuf & MASK_8b;
+}
+
+
+/* stream check for items in software buffer */
 int MAX3100Serial::available()
 {
-  // R flag is set
-  return (_transfer16b(MAX3100_CMD_READ_CONF) & MAX3100_CONF_R);
+  // _read_buf is empty when head == tail
+  return !(_read_buf_head == _read_buf_tail);
 }
 
 
@@ -200,20 +276,40 @@ int MAX3100Serial::_busy()
 }
 
 
+/* stream write byte by byte - extended by Print::write */
 size_t MAX3100Serial::write(uint8_t b)
 {
-  // There is no buffer.  Wait for the tramsmit register to empty before
-  // proceeding, otherwise the character may be lost.
-  while (_busy()) {}
-  _transfer16b(MAX3100_CMD_WRITE_DATA | b);
+  // wait for _write_buf space to be available
+  while ((_write_buf_head + 1) % WRITE_BUF_SIZE == _write_buf_tail) {}
+  // if we can, write out immediately
+  // this might generate an extra interrupt that will be ignored, yet is
+  // important to do because _irq() will only be called when T transitions
+  uint16_t cword = _transfer16b(MAX3100_CMD_READ_CONF);
+  uint16_t rword = 0;
+  if (cword & MAX3100_CONF_T) {
+    rword = _transfer16b(MAX3100_CMD_WRITE_DATA | (b & MASK_8b));
+    // the write might have come with read data too, so capture that too
+    if (rword & MAX3100_CONF_R) {
+      _read_buf_append(rword & MASK_9b);
+    }
+    // count metrics
+    count_sent++;
+  }
+  else {
+    // otherwise, put into the write buffer and let _irq() send
+    _write_buf[_write_buf_head] = b;
+    _write_buf_head = (_write_buf_head + 1) % WRITE_BUF_SIZE;
+  }
+  // ack the byte sent
   return 1;
 }
 
 
+/* stream flush to hardware output */
 void MAX3100Serial::flush()
 {
-  // There is no buffer.  Wait for the transmit register to empty.
-  while (_busy()) {}
+  // wait for _write_buf to empty
+  // while (_write_buf_head != _write_buf_tail) {}
 }
 
 
