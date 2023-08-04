@@ -40,6 +40,8 @@ MAX3100Serial mate_uart = MAX3100Serial(MATE_UART_XTAL_FREQ_KHZ, PIN_MATE_UART_C
 
 // sw config
 SYSTEM_MODE(SEMI_AUTOMATIC);
+
+// test serial buffer config
 typedef PacketSerial_<COBS, 0, 256> PacketSerial;
 PacketSerial mate_net_packet_serial;
 // const int packet_buf_len = 1500 * 3;  // borrow from ethernet + overhead
@@ -58,7 +60,7 @@ char test_packet_buf[] = \
   "\x83\x0a\x3c\x8b\x3a\x9f\x43\x89\x36\xb7\xb1\xa5\xdc\xca\xbf\x80"\
   "\x83\x0a\x3c\x8b\x3a\x9f\x43\x89\x36\xb7\xb1\xa5\xdc\xca\xbf\x80"\
   "\x83\x0a\x3c\x8b\x3a\x9f\x43\x89\x36\xb7\xb1\xa5\xdc\xca\xbf\x80";
-const int test_packet_len = 65;
+const int test_packet_len = 64;
 // char test_packet_buf[] = \"Lorem ipsum dolor sit amet, consectetur adipiscing elit.";
 // const int test_packet_len = 57;
 // "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Pellentesque eu aliquam quam, ac hendrerit eros. Vivamus vulputate vulputate eleifend. Ut ac blandit risus, sed suscipit felis. Praesent in leo eget massa tincidunt maximus. Integer tincidunt eros lorem, ac accumsan felis feugiat non. Praesent eu risus sed risus vestibulum dictum nec a magna. Donec pulvinar metus non lacus dignissim, id mattis odio iaculis. Donec vulputate, erat id porta sollicitudin, mi lorem vestibulum urna, vel dapibus mi justo tincidunt leo. Nam in sagittis metus,"\
@@ -72,14 +74,7 @@ system_tick_t debug_last_out_ms = 0;
 int mate_net_tx_pkt = 0;
 int mate_net_rx_pkt = 0;
 int mate_net_rx_err = 0;
-
-
-// void mate_uart_irq()
-// {
-//   // fetch data from the max3100's fifo
-//   int count = mate_uart.fetch();
-//   Log.info(String::format("mate_uart.fetch()->%d", count));
-// }
+int debug_mate_count_read = 0;
 
 
 void mateNetOnPacketReceived(
@@ -96,7 +91,7 @@ void mateNetOnPacketReceived(
   for(int i=0; i<test_packet_len; i++) {
     if(test_packet_buf[i] != buffer[i]) {
       mate_net_rx_err++;
-      Log.error(String::format("bad char %d", i));
+      Log.error(String::format("bad char at %d: 0x%x expecting 0x%x", i, buffer[i], test_packet_buf[i]));
       return;
     }
   }
@@ -104,6 +99,7 @@ void mateNetOnPacketReceived(
   // Log.info(String::format("%s (%d)", buffer, size));
   mate_net_rx_pkt++;
 }
+
 
 // setup() runs once, when the device is first turned on.
 void setup() {
@@ -113,16 +109,17 @@ void setup() {
   pinMode(PIN_UART1_TX, INPUT);
   // mate net pin setup
   pinMode(PIN_MATE_IND, OUTPUT);
-  analogWrite(PIN_MATE_IND, 127, 5);  // 50% 5Hz blink effect
-  // pinMode(PIN_MATE_UART_IRQ, INPUT_PULLUP);
-  // attachInterrupt(PIN_MATE_UART_IRQ, mate_uart_irq, FALLING);
+  analogWrite(PIN_MATE_IND, 255, 5);  // 0% 5Hz blink effect
+  // analogWrite(PIN_MATE_IND, 127, 5);  // 50% 5Hz blink effect
+  // .begin sets up PIN_MATE_UART_CS, PIN_MATE_UART_IRQ, and SPI interface
   mate_uart.begin(MATE_UART_BAUD);
   // pinSetDriveStrength does not seem to work with analogWrite and Serial1
   // mag net pin setup
   pinMode(PIN_MAG_RX, INPUT);
   pinMode(PIN_MAG_TX, INPUT);
   pinMode(PIN_MAG_IND, OUTPUT);  // open-drain to vcc
-  analogWrite(PIN_MAG_IND, 127, 5);  // 50% 5Hz blink effect
+  analogWrite(PIN_MAG_IND, 255, 5);  // 0% 5Hz blink effect
+  // analogWrite(PIN_MAG_IND, 127, 5);  // 50% 5Hz blink effect
   pinMode(PIN_MAG_EN, INPUT);
   // expansion pins setup
   pinMode(PIN_EXP_ADC1, INPUT);
@@ -133,15 +130,17 @@ void setup() {
   delay(2000);  // console reconnect
   Log.info(String::format("%s: %s", Time.timeStr().c_str(), "Hello world!"));
   // packet interfaces
-  // mate_net_packet_serial.setStream(&Serial1);
+  // mate_net_packet_serial.setStream(&mate_uart);
   // mate_net_packet_serial.setPacketHandler(&mateNetOnPacketReceived);
 }
 
+
 // loop() runs over and over again, as quickly as it can execute.
 void loop() {
-  Log.info(String::format("MAX3100 Conf: 0x%x, IRQ: %d, Sent: %d, Read: %d, Overflow: %d", mate_uart.read_conf(), mate_uart.count_irq, mate_uart.count_sent, mate_uart.count_read, mate_uart.count_overflow));
-  Log.info(String::format("MAX3100Serial._write_buf_head: %d, _write_buf_tail: %d", mate_uart._write_buf_head, mate_uart._write_buf_tail));
-  Log.info(String::format("MAX3100 IRQ: %d", digitalRead(PIN_MATE_UART_IRQ)));
+  analogWrite(PIN_MATE_IND, 127, 5);
+  Log.info("System.freeMemory: %lu", System.freeMemory());
+  Log.info("MAX3100 Conf: 0x%x, IRQ: %d, Sent: %d, Read: %d, Overflow: %d", mate_uart.readConf(), mate_uart.count_irq, mate_uart.count_sent, mate_uart.count_read, mate_uart.count_overflow);
+  Log.info("MAX3100 IRQ: %d", digitalRead(PIN_MATE_UART_IRQ));
   Log.info("1234567\r\n");
   mate_uart.write("1234567\r\n");
   delay(100);
@@ -152,34 +151,57 @@ void loop() {
     debug_packet_len++;
   }
   debug_packet_buf[debug_packet_len] = '\0';
-  Log.info(String::format("debug_packet_buf[0:%d]: %s", debug_packet_len, debug_packet_buf));
-  Log.info(String::format("debug_packet_buf[0]: 0x%x", debug_packet_buf[0]));
-  Log.info(String::format("debug_packet_buf[1]: 0x%x", debug_packet_buf[1]));
-  Log.info(String::format("debug_packet_buf[2]: 0x%x", debug_packet_buf[2]));
-  Log.info(String::format("debug_packet_buf[3]: 0x%x", debug_packet_buf[3]));
-  Log.info(String::format("debug_packet_buf[4]: 0x%x", debug_packet_buf[4]));
-  Log.info(String::format("debug_packet_buf[5]: 0x%x", debug_packet_buf[5]));
-  Log.info(String::format("debug_packet_buf[6]: 0x%x", debug_packet_buf[6]));
-  Log.info(String::format("debug_packet_buf[7]: 0x%x", debug_packet_buf[7]));
-  Log.info(String::format("debug_packet_buf[8]: 0x%x", debug_packet_buf[8]));
-  Log.info(String::format("debug_packet_buf[9]: 0x%x", debug_packet_buf[9]));
+  Log.info("debug_packet_buf[0:%d]: %s", debug_packet_len, debug_packet_buf);
+  Log.info("debug_packet_buf[0]: 0x%x", debug_packet_buf[0]);
+  Log.info("debug_packet_buf[1]: 0x%x", debug_packet_buf[1]);
+  Log.info("debug_packet_buf[2]: 0x%x", debug_packet_buf[2]);
+  Log.info("debug_packet_buf[3]: 0x%x", debug_packet_buf[3]);
+  Log.info("debug_packet_buf[4]: 0x%x", debug_packet_buf[4]);
+  Log.info("debug_packet_buf[5]: 0x%x", debug_packet_buf[5]);
+  Log.info("debug_packet_buf[6]: 0x%x", debug_packet_buf[6]);
+  Log.info("debug_packet_buf[7]: 0x%x", debug_packet_buf[7]);
+  Log.info("debug_packet_buf[8]: 0x%x", debug_packet_buf[8]);
+  Log.info("debug_packet_buf[9]: 0x%x", debug_packet_buf[9]);
   delay(1000);
   return;
-  //
+
   // packet exchange
-  mate_net_packet_serial.update();
-  if(mate_net_packet_serial.overflow()) {
-    Log.error("mate_net_packet_serial overflow!");
-  }
-  // if(mate_uart.availableForWrite()) {
-  //   digitalWrite(PIN_LED, PinState::HIGH);
-  //   mate_net_packet_serial.send((uint8_t *)test_packet_buf, test_packet_len);
-  //   mate_net_tx_pkt++;
-  //   digitalWrite(PIN_LED, PinState::LOW);
+  // mate_net_packet_serial.update();
+  // if(mate_net_packet_serial.overflow()) {
+  //   Log.error("mate_net_packet_serial overflow!");
   // }
+  // if(mate_uart.availableForWrite(test_packet_len)) {
+  //   analogWrite(PIN_MATE_IND, 255, 5);
+  //   mate_net_packet_serial.send((uint8_t *)(&test_packet_buf), test_packet_len);
+  //   mate_net_tx_pkt++;
+  // }
+
+  // raw block exchange
+  if(mate_uart.availableForWrite(test_packet_len)) {
+    mate_uart.write((char *)(&test_packet_buf));
+    mate_net_tx_pkt++;
+  }
+  mate_uart.flush();
+  delay(100);
+  // raw block capture of mate_uart
+  debug_packet_len = 0;
+  while(mate_uart.available() && debug_packet_len < packet_buf_len) {
+    debug_packet_buf[debug_packet_len] = mate_uart.read();
+    debug_packet_len++;
+  }
+  mateNetOnPacketReceived(NULL, (uint8_t *)(&debug_packet_buf), debug_packet_len);
+
   // debug out
+  if (mate_uart.count_read > debug_mate_count_read) {
+    analogWrite(PIN_MATE_IND, 127, 5);
+    debug_mate_count_read = mate_uart.count_read;
+  }
   system_tick_t now_ms = millis();
-  if(now_ms - debug_last_out_ms >= 5000) {
+  if (now_ms - debug_last_out_ms >= 5000) {
+    Log.info(String::format(
+      "MAX3100 IRQ: %d, Sent: %d, Read: %d, Overflow: %d",
+      mate_uart.count_irq, mate_uart.count_sent, mate_uart.count_read, mate_uart.count_overflow
+    ));
     Log.info(String::format(
       "mate_net_tx_pkt: %d, mate_net_rx_pkt: %d, mate_net_rx_err: %d",
       mate_net_tx_pkt, mate_net_rx_pkt, mate_net_rx_err

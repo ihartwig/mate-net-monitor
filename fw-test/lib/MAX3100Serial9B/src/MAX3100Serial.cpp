@@ -177,14 +177,14 @@ void MAX3100Serial::begin(uint32_t speed)
 
 
 /* immediately read MAX3100 conf register */
-int MAX3100Serial::read_conf()
+int MAX3100Serial::readConf()
 {
   return _transfer16b(MAX3100_CMD_READ_CONF);
 }
 
 
 /* immediately read MAX3100 data register */
-int MAX3100Serial::read_data()
+int MAX3100Serial::readData()
 {
   int rreg = 0;
   while ((rreg & MAX3100_CONF_R) == 0) {
@@ -201,7 +201,7 @@ void MAX3100Serial::end()
 }
 
 
-void MAX3100Serial::_read_buf_append(uint16_t word)
+void MAX3100Serial::_readBufAppend(uint16_t word)
 {
   // throw away this data if read_buf is full
   if ((_read_buf_head + 1) % READ_BUF_SIZE == _read_buf_tail) {
@@ -220,17 +220,22 @@ void MAX3100Serial::_read_buf_append(uint16_t word)
 void MAX3100Serial::_isr()
 {
   count_irq++;
+  int isr_read_count = 0;
+  int isr_write_count = 0;
   uint16_t cword = _transfer16b(MAX3100_CMD_READ_CONF);
   // first check for new data, since this this op clears both IRQ types
   // respond R set by reading all data
-  while (cword & MAX3100_CONF_R) {
+  while ((cword & MAX3100_CONF_R) && (isr_read_count < ISR_READ_MAX)) {
     uint16_t rword = _transfer16b(MAX3100_CMD_READ_DATA);
-    _read_buf_append(rword & MASK_9b);
+    _readBufAppend(rword & MASK_9b);
     // for next loop
     cword = _transfer16b(MAX3100_CMD_READ_CONF);
+    isr_read_count++;
   }
   // then check for T set which lets us write out data
-  while ((_write_buf_head != _write_buf_tail) && (cword & MAX3100_CONF_T)) {
+  while ((_write_buf_head != _write_buf_tail) &&
+         (cword & MAX3100_CONF_T) &&
+         (isr_write_count < ISR_WRITE_MAX)) {
     // pick from the write buf to send
     uint16_t wword = _write_buf[_write_buf_tail];
     uint16_t rword = 0;
@@ -238,12 +243,13 @@ void MAX3100Serial::_isr()
     rword = _transfer16b(MAX3100_CMD_WRITE_DATA | (wword & MASK_8b));
     // the write might have come with read data too, so capture that too
     if (rword & MAX3100_CONF_R) {
-      _read_buf_append(rword & MASK_9b);
+      _readBufAppend(rword & MASK_9b);
     }
     // count metrics
     count_sent++;
     // for next loop
     cword = _transfer16b(MAX3100_CMD_READ_CONF);
+    isr_write_count++;
   }
   return;
 }
@@ -279,18 +285,22 @@ int MAX3100Serial::_busy()
 /* stream write byte by byte - extended by Print::write */
 size_t MAX3100Serial::write(uint8_t b)
 {
-  // wait for _write_buf space to be available
-  while ((_write_buf_head + 1) % WRITE_BUF_SIZE == _write_buf_tail) {}
+  Log.info("MAX3100Serial::write(0x%x) _write_buf_head=%d, _write_buf_tail=%d", b, _write_buf_head, _write_buf_tail);
+  // give error if the byte could not be handled
+  if ((_write_buf_head + 1) % WRITE_BUF_SIZE == _write_buf_tail) {
+    return 0;
+  }
   // if we can, write out immediately
   // this might generate an extra interrupt that will be ignored, yet is
   // important to do because _irq() will only be called when T transitions
+  noInterrupts();  // protect ordering of read bytes
   uint16_t cword = _transfer16b(MAX3100_CMD_READ_CONF);
   uint16_t rword = 0;
   if (cword & MAX3100_CONF_T) {
     rword = _transfer16b(MAX3100_CMD_WRITE_DATA | (b & MASK_8b));
     // the write might have come with read data too, so capture that too
     if (rword & MAX3100_CONF_R) {
-      _read_buf_append(rword & MASK_9b);
+      _readBufAppend(rword & MASK_9b);
     }
     // count metrics
     count_sent++;
@@ -300,6 +310,7 @@ size_t MAX3100Serial::write(uint8_t b)
     _write_buf[_write_buf_head] = b;
     _write_buf_head = (_write_buf_head + 1) % WRITE_BUF_SIZE;
   }
+  interrupts();  // protect ordering of read bytes
   // ack the byte sent
   return 1;
 }
@@ -319,4 +330,14 @@ int MAX3100Serial::peek()
   // with a one byte software buffer, but this would prevent /RM interrupts from
   // firing.
   return -1;
+}
+
+
+/* return 1 if there is room for length in the write buffer else 0 */
+int MAX3100Serial::availableForWrite(size_t length)
+{
+  size_t available_length =
+    ((WRITE_BUF_SIZE-1) - _write_buf_head) + _write_buf_tail;
+  available_length %= WRITE_BUF_SIZE;  // when wrapped-around
+  return available_length >= length;
 }

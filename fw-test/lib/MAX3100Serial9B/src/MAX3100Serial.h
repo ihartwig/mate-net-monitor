@@ -54,6 +54,8 @@ chosen by the calling code.
 
 #define READ_BUF_SIZE 1024  // in uint16_t words
 #define WRITE_BUF_SIZE 256  // in uint16_t words
+#define ISR_READ_MAX 8  // MAX3100 has 8-word FIFO
+#define ISR_WRITE_MAX 8  // to match
 
 class MAX3100Serial : public Stream
 {
@@ -62,10 +64,11 @@ public:
   MAX3100Serial(uint32_t crystalFrequencykHz, pin_t chipSelectPin, pin_t intPin);
   ~MAX3100Serial();
   void begin(uint32_t speed);
-  int read_conf();
-  int read_data();
+  int readConf();
+  int readData();
   void end();
   int peek();
+  int availableForWrite(size_t length);
 
   virtual size_t write(uint8_t byte);
   virtual int read();
@@ -79,9 +82,6 @@ public:
   int count_read;
   int count_overflow;
 
-  volatile int _write_buf_head;
-  volatile int _write_buf_tail;
-
 
 private:
   pin_t _chipSelectPin;
@@ -93,11 +93,13 @@ private:
   volatile int _read_buf_tail;
   // circular buffer for writing bytes too
   uint16_t _write_buf[WRITE_BUF_SIZE];
+  volatile int _write_buf_head;
+  volatile int _write_buf_tail;
 
   void _setChipSelectPin(pin_t csPin);
   void _setClockMultiplier(uint32_t kHz);
   inline uint16_t _transfer16b(uint16_t send_buf);
-  void _read_buf_append(uint16_t word);
+  void _readBufAppend(uint16_t word);
   void _isr();
   int _busy();
 };
