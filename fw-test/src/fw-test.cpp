@@ -150,33 +150,33 @@ void setup() {
 
 // loop() runs over and over again, as quickly as it can execute.
 void loop() {
-  analogWrite(PIN_MATE_IND, 127, 5);
-  Log.info("System.freeMemory: %lu", System.freeMemory());
-  Log.info("MAX3100 Conf: 0x%x, IRQ: %d, Sent: %d, Read: %d, Overflow: %d", mate_uart.readConf(), mate_uart.count_irq, mate_uart.count_sent, mate_uart.count_read, mate_uart.count_overflow);
-  Log.info("MAX3100 IRQ: %d", digitalRead(PIN_MATE_UART_IRQ));
-  Log.info("1234567\r\n");
-  mate_uart.write("1234567\r\n");
-  delay(100);
-  // debug capture of mate_uart
-  debug_packet_len = 0;
-  while(mate_uart.available() && debug_packet_len < packet_buf_len) {
-    debug_packet_buf[debug_packet_len] = mate_uart.read();
-    debug_packet_len++;
-  }
-  debug_packet_buf[debug_packet_len] = '\0';
-  Log.info("debug_packet_buf[0:%d]: %s", debug_packet_len, debug_packet_buf);
-  Log.info("debug_packet_buf[0]: 0x%x", debug_packet_buf[0]);
-  Log.info("debug_packet_buf[1]: 0x%x", debug_packet_buf[1]);
-  Log.info("debug_packet_buf[2]: 0x%x", debug_packet_buf[2]);
-  Log.info("debug_packet_buf[3]: 0x%x", debug_packet_buf[3]);
-  Log.info("debug_packet_buf[4]: 0x%x", debug_packet_buf[4]);
-  Log.info("debug_packet_buf[5]: 0x%x", debug_packet_buf[5]);
-  Log.info("debug_packet_buf[6]: 0x%x", debug_packet_buf[6]);
-  Log.info("debug_packet_buf[7]: 0x%x", debug_packet_buf[7]);
-  Log.info("debug_packet_buf[8]: 0x%x", debug_packet_buf[8]);
-  Log.info("debug_packet_buf[9]: 0x%x", debug_packet_buf[9]);
-  delay(1000);
-  return;
+  // analogWrite(PIN_MATE_IND, 127, 5);
+  // Log.info("System.freeMemory: %lu", System.freeMemory());
+  // Log.info("MAX3100 Conf: 0x%x, IRQ: %d, Sent: %d, Read: %d, Overflow: %d", mate_uart.readConf(), mate_uart.count_irq, mate_uart.count_sent, mate_uart.count_read, mate_uart.count_overflow);
+  // Log.info("MAX3100 IRQ: %d", digitalRead(PIN_MATE_UART_IRQ));
+  // Log.info("1234567\r\n");
+  // mate_uart.write("1234567\r\n");
+  // delay(100);
+  // // debug capture of mate_uart
+  // debug_packet_len = 0;
+  // while(mate_uart.available() && debug_packet_len < packet_buf_len) {
+  //   debug_packet_buf[debug_packet_len] = mate_uart.read();
+  //   debug_packet_len++;
+  // }
+  // debug_packet_buf[debug_packet_len] = '\0';
+  // Log.info("debug_packet_buf[0:%d]: %s", debug_packet_len, debug_packet_buf);
+  // Log.info("debug_packet_buf[0]: 0x%x", debug_packet_buf[0]);
+  // Log.info("debug_packet_buf[1]: 0x%x", debug_packet_buf[1]);
+  // Log.info("debug_packet_buf[2]: 0x%x", debug_packet_buf[2]);
+  // Log.info("debug_packet_buf[3]: 0x%x", debug_packet_buf[3]);
+  // Log.info("debug_packet_buf[4]: 0x%x", debug_packet_buf[4]);
+  // Log.info("debug_packet_buf[5]: 0x%x", debug_packet_buf[5]);
+  // Log.info("debug_packet_buf[6]: 0x%x", debug_packet_buf[6]);
+  // Log.info("debug_packet_buf[7]: 0x%x", debug_packet_buf[7]);
+  // Log.info("debug_packet_buf[8]: 0x%x", debug_packet_buf[8]);
+  // Log.info("debug_packet_buf[9]: 0x%x", debug_packet_buf[9]);
+  // delay(1000);
+  // return;
 
   // packet exchange
   // mate_net_packet_serial.update();
@@ -211,14 +211,15 @@ void loop() {
   }
   system_tick_t now_ms = millis();
   if (now_ms - debug_last_out_ms >= 5000) {
-    Log.info(String::format(
+    Log.info("System.freeMemory: %lu", System.freeMemory());
+    Log.info(
       "MAX3100 IRQ: %d, Sent: %d, Read: %d, Overflow: %d",
       mate_uart.count_irq, mate_uart.count_sent, mate_uart.count_read, mate_uart.count_overflow
-    ));
-    Log.info(String::format(
+    );
+    Log.info(
       "mate_net_tx_pkt: %d, mate_net_rx_pkt: %d, mate_net_rx_err: %d",
       mate_net_tx_pkt, mate_net_rx_pkt, mate_net_rx_err
-    ));
+    );
     debug_last_out_ms = now_ms;
   }
   // cloud out TODO

@@ -285,7 +285,7 @@ int MAX3100Serial::_busy()
 /* stream write byte by byte - extended by Print::write */
 size_t MAX3100Serial::write(uint8_t b)
 {
-  Log.info("MAX3100Serial::write(0x%x) _write_buf_head=%d, _write_buf_tail=%d", b, _write_buf_head, _write_buf_tail);
+  // Log.info("MAX3100Serial::write(0x%x) _write_buf_head=%d, _write_buf_tail=%d", b, _write_buf_head, _write_buf_tail);
   // give error if the byte could not be handled
   if ((_write_buf_head + 1) % WRITE_BUF_SIZE == _write_buf_tail) {
     return 0;
