@@ -36,6 +36,8 @@
 // Configuration.
 #define MAX3100_CONF_R              0b1000000000000000
 #define MAX3100_CONF_T              0b0100000000000000
+// SHDNo==0 can be used along with R/T to check for spi connectivity 
+#define MAX3100_CONF_SHDN           0b0001000000000000
 #define MAX3100_CONF_RM             0b0000010000000000
 #define MAX3100_CONF_TM             0b0000100000000000
 #define MAX3100_CONF_NOT_RT         0b0011111111111111
@@ -225,7 +227,9 @@ void MAX3100Serial::_isr()
   uint16_t cword = _transfer16b(MAX3100_CMD_READ_CONF);
   // first check for new data, since this this op clears both IRQ types
   // respond R set by reading all data
-  while ((cword & MAX3100_CONF_R) && (isr_read_count < ISR_READ_MAX)) {
+  while ((cword & MAX3100_CONF_R) &&
+         (cword & MAX3100_CONF_SHDN) == 0 &&
+         (isr_read_count < ISR_READ_MAX)) {
     uint16_t rword = _transfer16b(MAX3100_CMD_READ_DATA);
     _readBufAppend(rword & MASK_9b);
     // for next loop
@@ -234,6 +238,7 @@ void MAX3100Serial::_isr()
   }
   // then check for T set which lets us write out data
   while ((_write_buf_head != _write_buf_tail) &&
+         (cword & MAX3100_CONF_SHDN) == 0 &&
          (cword & MAX3100_CONF_T) &&
          (isr_write_count < ISR_WRITE_MAX)) {
     // pick from the write buf to send

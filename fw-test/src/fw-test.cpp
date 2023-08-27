@@ -83,7 +83,9 @@ const int test_packet_len = 64;
 // const int test_packet_len = 1499;
 char debug_packet_buf[packet_buf_len];
 int debug_packet_len = 0;
-system_tick_t debug_last_out_ms = 0;
+system_tick_t debug_last_out_ms1 = 0;
+system_tick_t debug_last_out_ms2 = 0;
+system_tick_t debug_last_out_ms3 = 0;
 int mate_net_tx_pkt = 0;
 int mate_net_rx_pkt = 0;
 int mate_net_rx_err = 0;
@@ -203,8 +205,8 @@ void loop() {
   // mateNetOnPacketReceived(NULL, (uint8_t *)(&debug_packet_buf), debug_packet_len);
 
   // debug out
-  system_tick_t now_ms = millis();
-  if (now_ms - debug_last_out_ms >= 5000) {
+  system_tick_t now_ms = millis() + 300000; // trigger messages at startup
+  if (now_ms - debug_last_out_ms1 >= 500) {
     // leds
     if (mate_uart.count_read > debug_mate_count_read) {
       analogWrite(PIN_MATE_IND, 127, 5);
@@ -212,6 +214,9 @@ void loop() {
       analogWrite(PIN_MATE_IND, 255, 5);  // 0% 5Hz blink effect
     }
     debug_mate_count_read = mate_uart.count_read;
+    debug_last_out_ms1 = now_ms;
+  }
+  if (now_ms - debug_last_out_ms2 >= 5000) {
     // text summary
     Log.info("System.freeMemory: %lu", System.freeMemory());
     Log.info(
@@ -222,9 +227,22 @@ void loop() {
       "mate_net_tx_pkt: %d, mate_net_rx_pkt: %d, mate_net_rx_err: %d",
       mate_net_tx_pkt, mate_net_rx_pkt, mate_net_rx_err
     );
-    debug_last_out_ms = now_ms;
+    debug_last_out_ms2 = now_ms;
   }
-  // cloud out TODO
-  // uptime
-  // mate net pkt stats
+  // connect to particle cloud - can block for up to 1s
+  if (Particle.connected() == false) {
+    Particle.connect();
+  }
+  // comment out above to run offline only
+  if (now_ms - debug_last_out_ms3 >= 300000 && Particle.connected() == true) {
+    // cloud out - 2 devs publishing every 5 min fits in free tier
+    Particle.publish("fw-test-status", String::format(
+      "{"
+        "\"mate_net_tx_pkt\": %d, \"mate_net_rx_pkt\": %d, \"mate_net_rx_err\": %d"
+      "}",
+      mate_net_tx_pkt, mate_net_rx_pkt, mate_net_rx_err
+    ));
+    Log.info("Particle.publish(\"fw-test-status\", ...) done");
+    debug_last_out_ms3 = now_ms;
+  }
 }
