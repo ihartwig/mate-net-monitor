@@ -130,8 +130,8 @@ void setup() {
   delay(2000);  // console reconnect
   Log.info(String::format("%s: %s", Time.timeStr().c_str(), "Hello world!"));
   // packet interfaces
-  // mate_net_packet_serial.setStream(&mate_uart);
-  // mate_net_packet_serial.setPacketHandler(&mateNetOnPacketReceived);
+  mate_net_packet_serial.setStream(&mate_uart);
+  mate_net_packet_serial.setPacketHandler(&mateNetOnPacketReceived);
 }
 
 
@@ -166,38 +166,40 @@ void loop() {
   // return;
 
   // packet exchange
-  // mate_net_packet_serial.update();
-  // if(mate_net_packet_serial.overflow()) {
-  //   Log.error("mate_net_packet_serial overflow!");
-  // }
-  // if(mate_uart.availableForWrite(test_packet_len)) {
-  //   analogWrite(PIN_MATE_IND, 255, 5);
-  //   mate_net_packet_serial.send((uint8_t *)(&test_packet_buf), test_packet_len);
-  //   mate_net_tx_pkt++;
-  // }
-
-  // raw block exchange
+  mate_net_packet_serial.update();
+  if(mate_net_packet_serial.overflow()) {
+    Log.error("mate_net_packet_serial overflow!");
+  }
   if(mate_uart.availableForWrite(test_packet_len)) {
-    mate_uart.write((char *)(&test_packet_buf));
+    mate_net_packet_serial.send((uint8_t *)(&test_packet_buf), test_packet_len);
     mate_net_tx_pkt++;
   }
-  mate_uart.flush();
-  delay(100);
-  // raw block capture of mate_uart
-  debug_packet_len = 0;
-  while(mate_uart.available() && debug_packet_len < packet_buf_len) {
-    debug_packet_buf[debug_packet_len] = mate_uart.read();
-    debug_packet_len++;
-  }
-  mateNetOnPacketReceived(NULL, (uint8_t *)(&debug_packet_buf), debug_packet_len);
+
+  // raw block exchange
+  // if(mate_uart.availableForWrite(test_packet_len)) {
+  //   mate_uart.write((char *)(&test_packet_buf));
+  //   mate_net_tx_pkt++;
+  // }
+  // mate_uart.flush();
+  // delay(100);
+  // debug_packet_len = 0;
+  // while(mate_uart.available() && debug_packet_len < packet_buf_len) {
+  //   debug_packet_buf[debug_packet_len] = mate_uart.read();
+  //   debug_packet_len++;
+  // }
+  // mateNetOnPacketReceived(NULL, (uint8_t *)(&debug_packet_buf), debug_packet_len);
 
   // debug out
-  if (mate_uart.count_read > debug_mate_count_read) {
-    analogWrite(PIN_MATE_IND, 127, 5);
-    debug_mate_count_read = mate_uart.count_read;
-  }
   system_tick_t now_ms = millis();
   if (now_ms - debug_last_out_ms >= 5000) {
+    // leds
+    if (mate_uart.count_read > debug_mate_count_read) {
+      analogWrite(PIN_MATE_IND, 127, 5);
+    } else {
+      analogWrite(PIN_MATE_IND, 255, 5);  // 0% 5Hz blink effect
+    }
+    debug_mate_count_read = mate_uart.count_read;
+    // text summary
     Log.info("System.freeMemory: %lu", System.freeMemory());
     Log.info(
       "MAX3100 IRQ: %d, Sent: %d, Read: %d, Overflow: %d",
