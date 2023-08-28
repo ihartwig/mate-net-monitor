@@ -23,6 +23,10 @@ void mateNetOnPacketReceived(
   const void* sender,
   const uint8_t* buffer,
   size_t size);
+void magNetOnPacketReceived(
+  const void* sender,
+  const uint8_t* buffer,
+  size_t size);
 void setup();
 void loop();
 #line 16 "/Users/ihartwig/repos/mate-net-monitor/fw-test/src/fw-test.ino"
@@ -35,11 +39,12 @@ const pin_t PIN_MATE_IND = A0;
 const unsigned long MATE_UART_BAUD = 9600;
 const int MATE_UART_XTAL_FREQ_KHZ = 3686;
 // mag net pins - not used same uart
-// turns out these are not connected to a uart peripheral
+// these pin are connected to TX/RX by rework; don't use
 const pin_t PIN_MAG_RX = D5;
 const pin_t PIN_MAG_TX = D4;
 const pin_t PIN_MAG_IND = D2;
-const pin_t PIN_MAG_EN = D3;
+const pin_t PIN_MAG_DE = D3;
+const unsigned long MAG_UART_BAUD = 9600;
 // expansion pins
 const pin_t PIN_EXP_ADC1 = A1;
 const pin_t PIN_EXP_ADC2 = A2;
@@ -57,6 +62,7 @@ SYSTEM_MODE(SEMI_AUTOMATIC);
 // test serial buffer config
 typedef PacketSerial_<COBS, 0, 256> PacketSerial;
 PacketSerial mate_net_packet_serial;
+PacketSerial mag_net_packet_serial;
 // const int packet_buf_len = 1500 * 3;  // borrow from ethernet + overhead
 const int packet_buf_len = 256;
 // test packet from prbs_generate.js prbs11
@@ -90,6 +96,10 @@ int mate_net_tx_pkt = 0;
 int mate_net_rx_pkt = 0;
 int mate_net_rx_err = 0;
 int debug_mate_count_read = 0;
+int mag_net_tx_pkt = 0;
+int mag_net_rx_pkt = 0;
+int mag_net_rx_err = 0;
+int debug_mag_count_read = 0;
 
 
 void mateNetOnPacketReceived(
@@ -99,14 +109,14 @@ void mateNetOnPacketReceived(
   // check packet size 
   if (size != test_packet_len) {
     mate_net_rx_err++;
-    Log.error(String::format("bad len %d", size));
+    Log.error(String::format("mate_net: bad len %d", size));
     return;
   }
   // check packet content
   for(int i=0; i<test_packet_len; i++) {
     if(test_packet_buf[i] != buffer[i]) {
       mate_net_rx_err++;
-      Log.error(String::format("bad char at %d: 0x%x expecting 0x%x", i, buffer[i], test_packet_buf[i]));
+      Log.error(String::format("mate_net: bad char at %d: 0x%x expecting 0x%x", i, buffer[i], test_packet_buf[i]));
       return;
     }
   }
@@ -116,12 +126,32 @@ void mateNetOnPacketReceived(
 }
 
 
+void magNetOnPacketReceived(
+  const void* sender,
+  const uint8_t* buffer,
+  size_t size) {
+  // check packet size 
+  if (size != test_packet_len) {
+    mag_net_rx_err++;
+    Log.error(String::format("mag_net: bad len %d", size));
+    return;
+  }
+  // check packet content
+  for(int i=0; i<test_packet_len; i++) {
+    if(test_packet_buf[i] != buffer[i]) {
+      mag_net_rx_err++;
+      Log.error(String::format("mag_net: bad char at %d: 0x%x expecting 0x%x", i, buffer[i], test_packet_buf[i]));
+      return;
+    }
+  }
+  // ok
+  // Log.info(String::format("%s (%d)", buffer, size));
+  mag_net_rx_pkt++;  
+}
+
+
 // setup() runs once, when the device is first turned on.
 void setup() {
-  // don't setup anything on Serial1 - pin conflict
-  // Serial1.begin(MATE_BAUD, SERIAL_8N1);
-  pinMode(PIN_UART1_RX, INPUT);
-  pinMode(PIN_UART1_TX, INPUT);
   // mate net pin setup
   pinMode(PIN_MATE_IND, OUTPUT);
   analogWrite(PIN_MATE_IND, 255, 5);  // 0% 5Hz blink effect
@@ -133,9 +163,10 @@ void setup() {
   pinMode(PIN_MAG_RX, INPUT);
   pinMode(PIN_MAG_TX, INPUT);
   pinMode(PIN_MAG_IND, OUTPUT);  // open-drain to vcc
+  pinMode(PIN_MAG_DE, INPUT_PULLUP);  // activate loopback
   analogWrite(PIN_MAG_IND, 255, 5);  // 0% 5Hz blink effect
   // analogWrite(PIN_MAG_IND, 127, 5);  // 50% 5Hz blink effect
-  pinMode(PIN_MAG_EN, INPUT);
+  Serial1.begin(MAG_UART_BAUD, SERIAL_8N1);
   // expansion pins setup
   pinMode(PIN_EXP_ADC1, INPUT);
   pinMode(PIN_EXP_ADC2, INPUT);
@@ -147,6 +178,8 @@ void setup() {
   // packet interfaces
   mate_net_packet_serial.setStream(&mate_uart);
   mate_net_packet_serial.setPacketHandler(&mateNetOnPacketReceived);
+  mag_net_packet_serial.setStream(&Serial1);
+  mag_net_packet_serial.setPacketHandler(&magNetOnPacketReceived);
 }
 
 
@@ -189,6 +222,14 @@ void loop() {
     mate_net_packet_serial.send((uint8_t *)(&test_packet_buf), test_packet_len);
     mate_net_tx_pkt++;
   }
+  mag_net_packet_serial.update();
+  if(mag_net_packet_serial.overflow()) {
+    Log.error("mag_net_packet_serial overflow!");
+  }
+  if(Serial1.availableForWrite()) {
+    mag_net_packet_serial.send((uint8_t *)(&test_packet_buf), test_packet_len);
+    mag_net_tx_pkt++;
+  }
 
   // raw block exchange
   // if(mate_uart.availableForWrite(test_packet_len)) {
@@ -227,6 +268,10 @@ void loop() {
       "mate_net_tx_pkt: %d, mate_net_rx_pkt: %d, mate_net_rx_err: %d",
       mate_net_tx_pkt, mate_net_rx_pkt, mate_net_rx_err
     );
+    Log.info(
+      "mag_net_tx_pkt: %d, mag_net_rx_pkt: %d, mag_net_rx_err: %d",
+      mag_net_tx_pkt, mag_net_rx_pkt, mag_net_rx_err
+    );
     debug_last_out_ms2 = now_ms;
   }
   // connect to particle cloud - can block for up to 1s
@@ -238,9 +283,11 @@ void loop() {
     // cloud out - 2 devs publishing every 5 min fits in free tier
     Particle.publish("fw-test-status", String::format(
       "{"
-        "\"mate_net_tx_pkt\": %d, \"mate_net_rx_pkt\": %d, \"mate_net_rx_err\": %d"
+        "\"mate_net_tx_pkt\": %d, \"mate_net_rx_pkt\": %d, \"mate_net_rx_err\": %d,"
+        "\"mag_net_tx_pkt\": %d, \"mag_net_rx_pkt\": %d, \"mag_net_rx_err\": %d"
       "}",
-      mate_net_tx_pkt, mate_net_rx_pkt, mate_net_rx_err
+      mate_net_tx_pkt, mate_net_rx_pkt, mate_net_rx_err,
+      mag_net_tx_pkt, mag_net_rx_pkt, mag_net_rx_err
     ));
     Log.info("Particle.publish(\"fw-test-status\", ...) done");
     debug_last_out_ms3 = now_ms;
