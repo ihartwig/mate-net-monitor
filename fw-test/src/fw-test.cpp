@@ -164,7 +164,7 @@ void setup() {
   pinMode(PIN_MAG_TX, INPUT);
   pinMode(PIN_MAG_IND, OUTPUT);  // open-drain to vcc
   pinMode(PIN_MAG_DE, INPUT_PULLUP);  // activate loopback
-  analogWrite(PIN_MAG_IND, 255, 5);  // 0% 5Hz blink effect
+  digitalWrite(PIN_MAG_IND, PinState::LOW);  // on no blink
   // analogWrite(PIN_MAG_IND, 127, 5);  // 50% 5Hz blink effect
   Serial1.begin(MAG_UART_BAUD, SERIAL_8N1);
   // expansion pins setup
@@ -255,6 +255,12 @@ void loop() {
       analogWrite(PIN_MATE_IND, 255, 5);  // 0% 5Hz blink effect
     }
     debug_mate_count_read = mate_uart.count_read;
+    if (mag_net_tx_pkt > debug_mag_count_read) {
+      analogWrite(PIN_MAG_IND, 127, 5);
+    } else {
+      digitalWrite(PIN_MAG_IND, PinState::LOW);
+    }
+    debug_mag_count_read = mag_net_tx_pkt;
     debug_last_out_ms1 = now_ms;
   }
   if (now_ms - debug_last_out_ms2 >= 5000) {
