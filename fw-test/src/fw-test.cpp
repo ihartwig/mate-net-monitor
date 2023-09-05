@@ -18,7 +18,7 @@
 
 // hw config
 // mate net pins
-// disable this RX/TX pair so it does not output 
+// using a MAX3100 SPI UART instead
 void mateNetOnPacketReceived(
   const void* sender,
   const uint8_t* buffer,
@@ -30,9 +30,6 @@ void magNetOnPacketReceived(
 void setup();
 void loop();
 #line 16 "/Users/ihartwig/repos/mate-net-monitor/fw-test/src/fw-test.ino"
-const pin_t PIN_UART1_RX = RX;
-const pin_t PIN_UART1_TX = TX;
-// and use a MAX3100 SPI UART instead
 const pin_t PIN_MATE_UART_CS = A5;
 const pin_t PIN_MATE_UART_IRQ = D6;
 const pin_t PIN_MATE_IND = A0;

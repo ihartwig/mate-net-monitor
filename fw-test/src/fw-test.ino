@@ -12,10 +12,7 @@
 
 // hw config
 // mate net pins
-// disable this RX/TX pair so it does not output 
-const pin_t PIN_UART1_RX = RX;
-const pin_t PIN_UART1_TX = TX;
-// and use a MAX3100 SPI UART instead
+// using a MAX3100 SPI UART instead
 const pin_t PIN_MATE_UART_CS = A5;
 const pin_t PIN_MATE_UART_IRQ = D6;
 const pin_t PIN_MATE_IND = A0;

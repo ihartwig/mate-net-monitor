@@ -71,7 +71,9 @@ public:
   int availableForWrite(size_t length);
 
   virtual size_t write(uint8_t byte);
+  virtual size_t write9b(uint16_t bytes);
   virtual int read();
+  virtual int16_t read9b();
   virtual int available();
   virtual void flush();
 

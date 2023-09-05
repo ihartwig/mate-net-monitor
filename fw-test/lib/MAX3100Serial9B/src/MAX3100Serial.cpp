@@ -245,7 +245,7 @@ void MAX3100Serial::_isr()
     uint16_t wword = _write_buf[_write_buf_tail];
     uint16_t rword = 0;
     _write_buf_tail = (_write_buf_tail + 1) % WRITE_BUF_SIZE;
-    rword = _transfer16b(MAX3100_CMD_WRITE_DATA | (wword & MASK_8b));
+    rword = _transfer16b(MAX3100_CMD_WRITE_DATA | (wword & MASK_9b));
     // the write might have come with read data too, so capture that too
     if (rword & MAX3100_CONF_R) {
       _readBufAppend(rword & MASK_9b);
@@ -260,15 +260,22 @@ void MAX3100Serial::_isr()
 }
 
 
-/* stream read from software buffer */
+/* stream read - extra mask on read9b */
 int MAX3100Serial::read()
+{
+  return read() & MASK_8b;
+}
+
+
+/* stream read from software buffer */
+int16_t MAX3100Serial::read9b()
 {
   // wait for data to enter the buffer, avoid using available()
   while (_read_buf_head == _read_buf_tail) {}
   // give back the next item in buffer
   uint16_t rbuf = _read_buf[_read_buf_tail];
   _read_buf_tail = (_read_buf_tail + 1) % READ_BUF_SIZE;
-  return rbuf & MASK_8b;
+  return rbuf & MASK_9b;
 }
 
 
@@ -287,8 +294,14 @@ int MAX3100Serial::_busy()
 }
 
 
+size_t MAX3100Serial::write(uint8_t byte)
+{
+  return write9b(byte);
+}
+
+
 /* stream write byte by byte - extended by Print::write */
-size_t MAX3100Serial::write(uint8_t b)
+size_t MAX3100Serial::write9b(uint16_t bytes)
 {
   // Log.info("MAX3100Serial::write(0x%x) _write_buf_head=%d, _write_buf_tail=%d", b, _write_buf_head, _write_buf_tail);
   // give error if the byte could not be handled
@@ -302,7 +315,7 @@ size_t MAX3100Serial::write(uint8_t b)
   uint16_t cword = _transfer16b(MAX3100_CMD_READ_CONF);
   uint16_t rword = 0;
   if (cword & MAX3100_CONF_T) {
-    rword = _transfer16b(MAX3100_CMD_WRITE_DATA | (b & MASK_8b));
+    rword = _transfer16b(MAX3100_CMD_WRITE_DATA | (bytes & MASK_9b));
     // the write might have come with read data too, so capture that too
     if (rword & MAX3100_CONF_R) {
       _readBufAppend(rword & MASK_9b);
@@ -312,7 +325,7 @@ size_t MAX3100Serial::write(uint8_t b)
   }
   else {
     // otherwise, put into the write buffer and let _irq() send
-    _write_buf[_write_buf_head] = b;
+    _write_buf[_write_buf_head] = (bytes & MASK_9b);
     _write_buf_head = (_write_buf_head + 1) % WRITE_BUF_SIZE;
   }
   interrupts();  // protect ordering of read bytes

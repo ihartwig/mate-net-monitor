@@ -7,6 +7,6 @@
         "locale": "cpp"
     },
     "particle.targetDevice": "e00fce6829f72324f45dea83",
-    "particle.firmwareVersion": "3.3.0",
+    "particle.firmwareVersion": "5.4.0",
     "particle.targetPlatform": "boron"
 }

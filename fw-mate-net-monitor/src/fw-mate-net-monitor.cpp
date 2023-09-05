@@ -11,23 +11,27 @@
  * Date:
  */
 
+#include "MAX3100Serial.h"
 #include "uMate.h"
 
 // hw config
 // mate net pins
+// using a MAX3100 SPI UART instead
 void setup();
 void loop();
-#line 12 "/Users/ihartwig/repos/mate-net-monitor/fw-mate-net-monitor/src/fw-mate-net-monitor.ino"
-const pin_t PIN_MATE_RX = RX;
-const pin_t PIN_MATE_TX = TX;
+#line 14 "/Users/ihartwig/repos/mate-net-monitor/fw-mate-net-monitor/src/fw-mate-net-monitor.ino"
+const pin_t PIN_MATE_UART_CS = A5;
+const pin_t PIN_MATE_UART_IRQ = D6;
 const pin_t PIN_MATE_IND = A0;
-const unsigned long MATE_BAUD = 9600;
-const uint32_t MATE_CONFIG =  SERIAL_9N1;
+const unsigned long MATE_UART_BAUD = 9600;
+const int MATE_UART_XTAL_FREQ_KHZ = 3686;
 // mag net pins - not used same uart
+// these pin are connected to TX/RX by rework; don't use
 const pin_t PIN_MAG_RX = D5;
 const pin_t PIN_MAG_TX = D4;
 const pin_t PIN_MAG_IND = D2;
-const pin_t PIN_MAG_EN = D3;
+const pin_t PIN_MAG_DE = D3;
+const unsigned long MAG_UART_BAUD = 9600;
 // expansion pins
 const pin_t PIN_EXP_ADC1 = A1;
 const pin_t PIN_EXP_ADC2 = A2;
@@ -35,9 +39,14 @@ const pin_t PIN_EXP_ADC3 = A3;
 const pin_t PIN_EXP_ADC4 = A4;
 const pin_t PIN_LED = D7;
 
-// sw config
+// uarts config
 SerialLogHandler logHandler;  // default to Serial on debug USB
-MateControllerProtocol mate_bus(Serial1);  // MATE system connected to UART1
+MAX3100Serial mate_uart = MAX3100Serial(MATE_UART_XTAL_FREQ_KHZ, PIN_MATE_UART_CS, PIN_MATE_UART_IRQ);
+MateControllerProtocol mate_bus(mate_uart);  // MATE system connected to UART1
+
+// sw config
+SYSTEM_MODE(SEMI_AUTOMATIC);
+SYSTEM_THREAD(ENABLED);
 const system_tick_t pub_status_int_ms = 30000;
 system_tick_t pub_status_last_ms = 0;
 const system_tick_t mate_status_int_ms = 5000;
@@ -61,43 +70,41 @@ system_tick_t mate_status_update_ms = 0;
 system_tick_t cloud_update_ms = 0;
 char mate_monitor_stats[PUB_BUFFER_LEN];
 char mate_status_mx_hex[STATUS_RESP_SIZE*2];  // encode response in hex chars
-SYSTEM_MODE(SEMI_AUTOMATIC);
-SYSTEM_THREAD(ENABLED);
 
 
 void setup() {
-    // mate net pin setup
-    pinMode(PIN_MATE_RX, INPUT);
-    pinMode(PIN_MATE_TX, OUTPUT);
-    pinMode(PIN_MATE_IND, OUTPUT);
-    digitalWrite(PIN_MATE_IND, PinState::LOW);
-    // mag net pin setup
-    pinMode(PIN_MAG_RX, INPUT);
-    pinMode(PIN_MAG_TX, INPUT);
-    pinMode(PIN_MAG_IND, OUTPUT);  // open-drain to vcc
-    pinMode(PIN_MAG_EN, INPUT);
-    digitalWrite(PIN_MAG_IND, PinState::HIGH);
-    // expansion pins setup
-    pinMode(PIN_EXP_ADC1, INPUT);
-    pinMode(PIN_EXP_ADC2, INPUT);
-    pinMode(PIN_EXP_ADC3, INPUT);
-    pinMode(PIN_EXP_ADC4, INPUT);
-    pinMode(D7, OUTPUT);
-    digitalWrite(D7, PinState::HIGH);
-    // begin with config for mate_bus
-    Serial1.begin(MATE_BAUD, MATE_CONFIG);
-    // debug logging to usb serial
-    delay(2000);  // console reconnect
-    spark::Log.info(String::format("%s: %s", Time.timeStr().c_str(), "MATE emulator: Hello world!"));
-    // particle cloud variables
-    // Particle.variable("mate_monitor_uptime_ms", mate_monitor_uptime_ms);
-    // Particle.variable("mate_devices_found", mate_devices_found);
-    // Particle.variable("mate_status_mx_cnt_rx", mate_status_mx_cnt_rx);
-    // Particle.variable("mate_status_mx_cnt_err", mate_status_mx_cnt_err);
-    // Particle.variable("mate_status_mx_hex", mate_status_mx_hex);
-    Particle.connect();
-    spark::Log.info("MATE emulator: particle cloud ready");
-    digitalWrite(D7, PinState::LOW);
+  // mate net pin setup
+  pinMode(PIN_MATE_IND, OUTPUT);
+  analogWrite(PIN_MATE_IND, 255, 5);  // 0% 5Hz blink effect
+  // analogWrite(PIN_MATE_IND, 127, 5);  // 50% 5Hz blink effect
+  // .begin sets up PIN_MATE_UART_CS, PIN_MATE_UART_IRQ, and SPI interface
+  mate_uart.begin(MATE_UART_BAUD);
+  // pinSetDriveStrength does not seem to work with analogWrite and Serial1
+  // mag net pin setup
+  pinMode(PIN_MAG_RX, INPUT);
+  pinMode(PIN_MAG_TX, INPUT);
+  pinMode(PIN_MAG_IND, OUTPUT);  // open-drain to vcc
+  pinMode(PIN_MAG_DE, INPUT_PULLUP);  // activate loopback
+  digitalWrite(PIN_MAG_IND, PinState::LOW);  // on no blink
+  // analogWrite(PIN_MAG_IND, 127, 5);  // 50% 5Hz blink effect
+  Serial1.begin(MAG_UART_BAUD, SERIAL_8N1);
+  // expansion pins setup
+  pinMode(PIN_EXP_ADC1, INPUT);
+  pinMode(PIN_EXP_ADC2, INPUT);
+  pinMode(PIN_EXP_ADC3, INPUT);
+  pinMode(PIN_EXP_ADC4, INPUT);
+  // debug logging to usb serial
+  delay(2000);  // console reconnect
+  spark::Log.info(String::format("%s: %s", Time.timeStr().c_str(), "MATE emulator: Hello world!"));
+  // particle cloud variables
+  // Particle.variable("mate_monitor_uptime_ms", mate_monitor_uptime_ms);
+  // Particle.variable("mate_devices_found", mate_devices_found);
+  // Particle.variable("mate_status_mx_cnt_rx", mate_status_mx_cnt_rx);
+  // Particle.variable("mate_status_mx_cnt_err", mate_status_mx_cnt_err);
+  // Particle.variable("mate_status_mx_hex", mate_status_mx_hex);
+  Particle.connect();
+  spark::Log.info("MATE emulator: particle cloud ready");
+  digitalWrite(D7, PinState::LOW);
 }
 
 
@@ -161,7 +168,7 @@ void loop() {
     snprintf(
         (char *)&mate_monitor_stats,
         PUB_BUFFER_LEN,
-        "uptime_ms: %ld, mate_devices_found: 0x%x, mate_status_mx_cnt_rx: %d, mate_status_mx_cnt_err: %d, mate_status_update_ms: %ld, cloud_update_ms: %ld",
+        "{\"uptime_ms\": %ld, \"mate_devices_found\": 0x%x, \"mate_status_mx_cnt_rx\": %d, \"mate_status_mx_cnt_err\": %d, \"mate_status_update_ms\": %ld, \"cloud_update_ms\": %ld",
         now_ms, mate_devices_found, mate_status_mx_cnt_rx, mate_status_mx_cnt_err, mate_status_update_ms, cloud_update_ms);
     spark::Log.info(mate_monitor_stats);
     mate_status_last_ms = now_ms;
