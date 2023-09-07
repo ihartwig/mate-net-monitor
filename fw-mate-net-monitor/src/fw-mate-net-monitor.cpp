@@ -47,7 +47,7 @@ MateControllerProtocol mate_bus(mate_uart);  // MATE system connected to UART1
 // sw config
 SYSTEM_MODE(SEMI_AUTOMATIC);
 SYSTEM_THREAD(ENABLED);
-const system_tick_t pub_status_int_ms = 30000;
+const system_tick_t pub_status_int_ms = 300000;
 system_tick_t pub_status_last_ms = 0;
 const system_tick_t mate_status_int_ms = 5000;
 system_tick_t mate_status_last_ms = 0;

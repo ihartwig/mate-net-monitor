@@ -1,22 +1,21 @@
 /*
-  $Id: MAX3100Serial.h,v 1.6 2018/03/07 12:40:42 ewan Exp $
-  Arduino MAX3100Serial library.
-  MAX3100Serial.h (C) 2016 Ewan Parker.
+  Arduino MAX3100Serial library
+  MAX3100Serial.h (C) 2016 Ewan Parker
+  Adapted for Particle Spark with interrupt, queue, and Serial9b improvements
+  MAX3100Serial.h (C) 2023 Ian Hartwig
 
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
+  This program is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
 
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
 
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
-  The author may be reached at https://www.ewan.cc/ for queries.
+  You should have received a copy of the GNU General Public License
+  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 
   A Maxim Integrated MAX3100 external USART/UART communication library for
@@ -47,6 +46,7 @@ chosen by the calling code.
 #define MAX3100SERIAL_H
 
 #include <Stream.h>
+#include "Stream9b.h"
 
 #ifndef GCC_VERSION
 #define GCC_VERSION (__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + __GNUC_PATCHLEVEL__)
@@ -57,7 +57,22 @@ chosen by the calling code.
 #define ISR_READ_MAX 8  // MAX3100 has 8-word FIFO
 #define ISR_WRITE_MAX 8  // to match
 
-class MAX3100Serial : public Stream
+/**
+ * Stream requires implementation of:
+ *  virtual int available() = 0;
+ *  virtual int read() = 0;
+ *  virtual int peek() = 0;
+ *  virtual void flush() = 0;
+ * and is a subclass of Print which requires implementation of:
+ *  virtual size_t write(uint8_t) = 0;
+ * Stream9b requires implementation of:
+ *  virtual int16_t read9b() = 0;
+ *  virtual size_t write9b(uint16_t b) = 0;
+ *  virtual int available() = 0;
+ *  virtual int peek() = 0;
+ *  virtual void flush() = 0;
+*/
+class MAX3100Serial : public Stream, public Stream9b
 {
 public:
   // public methods
@@ -77,6 +92,8 @@ public:
   virtual int available();
   virtual void flush();
 
+  // provides and implementation of
+  // virtual size_t write(const uint8_t *buffer, size_t size);
   using Print::write;
 
   int count_irq;

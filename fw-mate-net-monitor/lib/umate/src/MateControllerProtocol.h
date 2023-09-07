@@ -2,7 +2,7 @@
 #define MATE_CONTROLLER_PROTOCOL_H
 
 #include "uMate.h"
-#include <Serial9b.h>
+#include "Stream9b.h"
 
 #define NUM_PORTS (10)
 

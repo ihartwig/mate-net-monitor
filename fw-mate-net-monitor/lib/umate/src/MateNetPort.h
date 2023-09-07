@@ -3,8 +3,9 @@
 
 #include <stdint.h>
 #include <Arduino.h>
-#include <Serial9b.h>
 #include <type_traits>
+
+#include "Stream9b.h"
 
 #ifndef OUT
 #define OUT
