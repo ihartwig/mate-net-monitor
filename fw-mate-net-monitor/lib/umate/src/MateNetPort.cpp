@@ -3,7 +3,7 @@
 #define MATENET_BAUD 9600
 #define RX_TIMEOUT 100 // ms
 
-MateNetPort::MateNetPort(Stream& ser, Stream* debug)
+MateNetPort::MateNetPort(Stream9b& ser, Stream* debug)
   : debug(debug), ser(ser)
 {
     
@@ -20,20 +20,20 @@ void MateNetPort::send_data(uint8_t byte0, uint8_t* data, uint8_t len)
         return;
 
     // First byte has bit 9 set (port)
-    ser.write(byte0 | BIT8);
+    ser.write9b(byte0 | BIT8);
     ser.flush();
 
     // Data payload
     for (int i = 0; i < len; i++) {
-        ser.write(data[i]);
+        ser.write9b(data[i]);
     }
 
     // Data checksum
     uint16_t checksum = 
         (uint16_t)byte0 + 
         calc_checksum(data, len);
-    ser.write((checksum >> 8) & 0xFF);
-    ser.write(checksum & 0xFF);
+    ser.write9b((checksum >> 8) & 0xFF);
+    ser.write9b(checksum & 0xFF);
 
     if (debug) {
         debug->print("TX[");
@@ -78,8 +78,7 @@ CommsStatus MateNetPort::recv_data(OUT uint8_t* byte0, OUT uint8_t* data, OUT ui
         // Allow time for one byte to be received
         delayMicroseconds(800*2);
         
-        int16_t b = 0;
-        b = ser.read();
+        int16_t b = ser.read9b();
         if (b < 0) {
             return CommsStatus::NoData; // No data available yet
         }

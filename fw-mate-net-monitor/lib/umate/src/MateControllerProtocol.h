@@ -2,6 +2,7 @@
 #define MATE_CONTROLLER_PROTOCOL_H
 
 #include "uMate.h"
+#include <Serial9b.h>
 
 #define NUM_PORTS (10)
 
@@ -54,7 +55,7 @@ private:
 class MateControllerProtocol : public MateNetPort
 {
 public:
-    MateControllerProtocol(Stream& ser, Stream* debug = nullptr)
+    MateControllerProtocol(Stream9b& ser, Stream* debug = nullptr)
         : MateNetPort(ser, debug), timeout(100), devices_scanned(false)
     { }
 

@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <Arduino.h>
+#include <Serial9b.h>
 #include <type_traits>
 
 #ifndef OUT
@@ -81,7 +82,7 @@ enum CommsStatus {
 class MateNetPort
 {
 public:
-    MateNetPort(Stream& ser, Stream* debug = nullptr);
+    MateNetPort(Stream9b& ser, Stream* debug = nullptr);
     void begin();
 
     bool available();
@@ -98,20 +99,11 @@ protected:
     uint16_t calc_checksum(uint8_t* data, uint8_t len);
 
 private:
-    Stream& ser;
+    Stream9b& ser;
 
     uint8_t rx_buffer[MAX_PACKET_LEN];
     uint8_t rx_idx;
 };
-
-
-// Particle APIs define a 9-bit mode for Stream which we've modified lib to use
-#if !defined (SERIAL_9N1)
-#error Unsupported Architecture - use Stream9b lib
-#endif
-#ifndef BIT8
-#define BIT8 (0x100)
-#endif
 
 
 #endif /* MATENETPORT_H */

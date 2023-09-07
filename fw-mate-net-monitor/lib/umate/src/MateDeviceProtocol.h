@@ -10,12 +10,12 @@
 class MateDeviceProtocol : public MateNetPort
 {
 public:
-    MateDeviceProtocol(Stream& ser, Stream* debug = nullptr)
+    MateDeviceProtocol(Stream9b& ser, Stream* debug = nullptr)
         : MateNetPort(ser, debug)
     { }
 
     // Receive a packet. Must be called periodically
-    bool recv_packet(/*OUT*/ uint8_t* port, /*OUT*/ packet_t* packet);
+    bool recv_packet(OUT uint8_t* port, OUT packet_t* packet);
 
     // Send a response to a received packet
     // type should match the type of command that this is responding to
