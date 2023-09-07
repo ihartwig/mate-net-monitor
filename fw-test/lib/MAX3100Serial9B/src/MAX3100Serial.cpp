@@ -40,6 +40,7 @@
 #define MAX3100_CONF_SHDN           0b0001000000000000
 #define MAX3100_CONF_RM             0b0000010000000000
 #define MAX3100_CONF_TM             0b0000100000000000
+#define MAX3100_CONF_PE             0b0000000000100000
 #define MAX3100_CONF_NOT_RT         0b0011111111111111
 
 // Baud rates for clock multiplier x1.
@@ -81,6 +82,7 @@ MAX3100Serial::MAX3100Serial(uint32_t crystalFrequencykHz, pin_t csPin, pin_t in
   count_irq = 0;
   count_sent = 0;
   count_read = 0;
+  count_read_err = 0;
   count_overflow = 0;
   // pre-setup hardware
   _intPin = intPin;
@@ -130,8 +132,12 @@ inline uint16_t MAX3100Serial::_transfer16b(uint16_t send_buf) {
 
 // Set the communication rate.  Only allow "standard" rates, and default to
 // 9600 bps if the rate is nonstandard or not supported.
-void MAX3100Serial::begin(uint32_t speed)
+// parityEnable: when non-0 set the PE bit to allow 9th bit send & receive
+//   read() and write() will calculate Pt and check Pr bit
+//   read9b() and write9b() will pass the 9th (Pt/Pr) bit through
+void MAX3100Serial::begin(uint32_t speed, int parityEnable)
 {
+  _parityEnable = !!(parityEnable);
   uint16_t conf;
   if (_clockMultiplier == 2)
   {
@@ -171,6 +177,9 @@ void MAX3100Serial::begin(uint32_t speed)
   // action to send/receive words into the buffers. conf already contains baud
   // set bits.
   conf = MAX3100_CMD_WRITE_CONF | MAX3100_CONF_RM | MAX3100_CONF_TM | conf;
+  if (_parityEnable) {
+    conf |= MAX3100_CONF_PE;
+  }
   _transfer16b(conf);
   // add interrupt
   pinMode(_intPin, INPUT_PULLUP);
@@ -263,7 +272,13 @@ void MAX3100Serial::_isr()
 /* stream read - extra mask on read9b */
 int MAX3100Serial::read()
 {
-  return read() & MASK_8b;
+  uint16_t bytes = read9b();
+  uint8_t byte = bytes & MASK_8b;
+  uint16_t pr = (bytes >> 8) & 0x1;
+  if (pr != __builtin_parity(byte)) {
+    count_read_err++;
+  }
+  return byte;
 }
 
 
@@ -296,7 +311,8 @@ int MAX3100Serial::_busy()
 
 size_t MAX3100Serial::write(uint8_t byte)
 {
-  return write9b(byte);
+  uint16_t pt = (__builtin_parity(byte) & 0x1) << 8;
+  return write9b(pt | byte);
 }
 
 

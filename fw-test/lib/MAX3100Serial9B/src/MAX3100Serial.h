@@ -78,7 +78,7 @@ public:
   // public methods
   MAX3100Serial(uint32_t crystalFrequencykHz, pin_t chipSelectPin, pin_t intPin);
   ~MAX3100Serial();
-  void begin(uint32_t speed);
+  void begin(uint32_t speed, int parityEnable);
   int readConf();
   int readData();
   void end();
@@ -99,6 +99,7 @@ public:
   int count_irq;
   int count_sent;
   int count_read;
+  int count_read_err;
   int count_overflow;
 
 
@@ -106,6 +107,7 @@ private:
   pin_t _chipSelectPin;
   pin_t _intPin;
   uint16_t _clockMultiplier;
+  int _parityEnable;
   // circular buffer for reading bytes for responding to interrupts
   uint16_t _read_buf[READ_BUF_SIZE];
   volatile int _read_buf_head;
@@ -113,7 +115,7 @@ private:
   // circular buffer for writing bytes too
   uint16_t _write_buf[WRITE_BUF_SIZE];
   volatile int _write_buf_head;
-  volatile int _write_buf_tail;
+  volatile int _write_buf_tail;  
 
   void _setChipSelectPin(pin_t csPin);
   void _setClockMultiplier(uint32_t kHz);

@@ -154,7 +154,7 @@ void setup() {
   analogWrite(PIN_MATE_IND, 255, 5);  // 0% 5Hz blink effect
   // analogWrite(PIN_MATE_IND, 127, 5);  // 50% 5Hz blink effect
   // .begin sets up PIN_MATE_UART_CS, PIN_MATE_UART_IRQ, and SPI interface
-  mate_uart.begin(MATE_UART_BAUD);
+  mate_uart.begin(MATE_UART_BAUD, 1);
   // pinSetDriveStrength does not seem to work with analogWrite and Serial1
   // mag net pin setup
   pinMode(PIN_MAG_RX, INPUT);
@@ -264,8 +264,8 @@ void loop() {
     // text summary
     Log.info("System.freeMemory: %lu", System.freeMemory());
     Log.info(
-      "MAX3100 IRQ: %d, Sent: %d, Read: %d, Overflow: %d",
-      mate_uart.count_irq, mate_uart.count_sent, mate_uart.count_read, mate_uart.count_overflow
+      "MAX3100 IRQ: %d, Sent: %d, Read: %d, Read Err: %d, Overflow: %d",
+      mate_uart.count_irq, mate_uart.count_sent, mate_uart.count_read, mate_uart.count_read_err, mate_uart.count_overflow
     );
     Log.info(
       "mate_net_tx_pkt: %d, mate_net_rx_pkt: %d, mate_net_rx_err: %d",
