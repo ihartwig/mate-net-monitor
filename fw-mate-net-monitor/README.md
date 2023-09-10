@@ -2,14 +2,29 @@
 
 A Particle project named fw-mate-net-monitor
 
-This project implements the uMATE library on top of Particle Boron with a mate-net-monitor adapter board.
+This project implements the uMATE library on top of Particle Boron with a mate-net-monitor adapter board to act like the status screen on a MATE controller and save this data to a cloud database.
 
-Library modifications:
-* modify to use the Particle-provided Stream and Serial implementations
-    * replace Stream9b with Stream
-    * replace size_t write9b() with size_t write(uint16_t)
-    * replace int16_t read9b() with int read()
-* ?
+More details on the [MATE-to-MX protocol](https://github.com/jorticus/pymate/blob/master/doc/protocol/Protocol.md) have been documented by jorticus - thank you! The simple implementation here requests the device type and status page from port 0 every 30 seconds.
+
+#### Limitations:
+* only a direct connection to an MX Charger is implemented - no hub
+
+#### Topology:
+
+```
+Particle Cloud
+       |
+      LTE
+       |               MAX3100 UART &
+     Boron --- SPI --- Opto-Isolation --- MATE-net --- MX Charger
+                       3.3V       24V
+```
+
+#### Library modifications:
+
+* uMate has extra #define OUT statements commented for conflict with Particle libs
+* MAX3100Serial9b includes a compatible Stream9b.h to the one used in uMate
+
 
 ## Welcome to your project!
 
