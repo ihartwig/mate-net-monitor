@@ -50,10 +50,11 @@ MateControllerProtocol mate_bus(mate_uart); // connect mate_bus to this Steam9b 
 // sw config
 SYSTEM_MODE(SEMI_AUTOMATIC);
 SYSTEM_THREAD(ENABLED);
+// event timers - start with the longest negative so we have event on startup
 const system_tick_t mate_scan_int_ms = 1000;
-system_tick_t mate_scan_last_ms = 0;
 const system_tick_t mate_status_int_ms = 300000;
-system_tick_t mate_status_last_ms = 0;
+system_tick_t mate_scan_last_ms = -mate_status_int_ms;
+system_tick_t mate_status_last_ms = -mate_status_int_ms;
 #define PUB_BUFFER_LEN   (particle::protocol::MAX_EVENT_DATA_LENGTH)
 #define MAX_BUFFER_LEN   (100)
 #define MATE_PACKET_LEN  (sizeof(packet_t) + 1)
@@ -72,7 +73,6 @@ int mate_devices_found = 0;  // bit mask of the mate devices found
 int mate_status_mx_cnt_rx = 0;
 int mate_status_mx_cnt_err = 0;
 system_tick_t mate_status_update_ms = 0;
-// system_tick_t cloud_update_ms = 0;
 char mate_monitor_stats[PUB_BUFFER_LEN];
 char mate_status_mx_hex[(STATUS_RESP_SIZE*2)+1];  // encode response in hex chars
 
@@ -101,9 +101,9 @@ void setup() {
   pinMode(PIN_EXP_ADC4, INPUT);
   // debug logging to usb serial
   delay(2000);  // console reconnect
-  auto logManager = LogManager::instance();
-  auto logTraceHandler = new StreamLogHandler(Serial, LOG_LEVEL_TRACE);
-  logManager->addHandler(logTraceHandler);
+  // auto logManager = LogManager::instance();
+  // auto logTraceHandler = new StreamLogHandler(Serial, LOG_LEVEL_TRACE);
+  // logManager->addHandler(logTraceHandler);
   spark::Log.trace(String::format("%s: %s", Time.timeStr().c_str(), "MATE emulator: Hello world!"));
   // particle cloud variables
   Particle.variable("mate_scan_last_ms", mate_scan_last_ms);
@@ -124,7 +124,7 @@ int mate_bus_scan() {
   int retries_used = 0;
   mate_devices_found = 0;  // bit mask of the mate devices found
   spark::Log.trace("mate_bus_scan(): looking for mate devices");
-  while(!MATE_MX_PRSNT(mate_devices_found) && retries_used < MATE_RETRIES) {
+  for (; !MATE_MX_PRSNT(mate_devices_found) && retries_used < MATE_RETRIES; retries_used++) {
     mate_bus.scan_ports();
     // mate device ports from scan with -1 not found
     mate_port_hub = mate_bus.find_device(DeviceType::Hub);
@@ -139,7 +139,6 @@ int mate_bus_scan() {
     mate_devices_found |= (1 & (mate_port_mx!=-1))<<DeviceType::Mx;
     mate_devices_found |= (1 & (mate_port_flexnetdc!=-1))<<DeviceType::FlexNetDc;
     mate_devices_found |= (1 & (mate_port_dc!=-1))<<DeviceType::Dc;
-    retries_used++;
   }
   spark::Log.trace("mate_bus_scan(): exiting with devices 0x%x after %d retries", mate_devices_found, retries_used);
   return retries_used;
@@ -152,7 +151,7 @@ int mate_mx_status () {
   int retries_used = 0;
   bool new_status = false;
   spark::Log.trace("mate_mx_status(): looking for MX Charger status");
-  while(!new_status && retries_used < MATE_RETRIES) {
+  for (; !new_status && retries_used < MATE_RETRIES; retries_used++) {
     new_status = mate_bus.read_status(mate_status_buf, STATUS_RESP_SIZE, 1, mate_port_mx);
     // todo: maybe we should timeout for this. apparently there is?
     if (new_status) {
@@ -160,17 +159,16 @@ int mate_mx_status () {
     } else {
       mate_status_mx_cnt_err++;
     }
-    // convert to hex string byte of status response at a time
-    if (!new_status) {
-      // blank out mate_status_buf if there was no new status
-      memset((char *)&mate_status_mx_hex, 0, STATUS_RESP_SIZE);
-    }
-    for (int i = 0; i < STATUS_RESP_SIZE; i++) {
-      snprintf(((char *)&mate_status_mx_hex)+(i*2), 3, "%02x", mate_status_buf[i]);
-    }
-    // null terminator added by last snprintf
-    retries_used++;
   }
+  // convert to hex string byte of status response at a time
+  if (!new_status) {
+    // blank out mate_status_buf if there was no new status
+    memset((char *)&mate_status_mx_hex, 0, STATUS_RESP_SIZE);
+  }
+  for (int i = 0; i < STATUS_RESP_SIZE; i++) {
+    snprintf(((char *)(&mate_status_mx_hex[i*2])), 3, "%02x", mate_status_buf[i]);
+  }
+  // null terminator added by last snprintf
   spark::Log.trace("mate_mx_status(): exiting after %d retries", retries_used);
   return retries_used;
 }
@@ -180,7 +178,7 @@ void loop() {
     int mate_scan_retries = 0;
     int mate_status_retries = 0;
     // skip the rest if we haven't reach an action interval yet
-    system_tick_t now_ms = millis() + mate_status_int_ms;
+    system_tick_t now_ms = millis();
     if (now_ms - mate_scan_last_ms < mate_scan_int_ms) {
       return;
     }
@@ -199,10 +197,12 @@ void loop() {
       return;
     }
     mate_status_last_ms = now_ms;
-    // and get MX Charger status
-    if(MATE_MX_PRSNT(mate_devices_found)) {
-      mate_status_retries = mate_mx_status();
+    // and get MX Charger status, regardless of bus scan result
+    // default to looking for devices on port 0 (direct connect)
+    if(!MATE_MX_PRSNT(mate_devices_found)) {
+      mate_port_mx = 0;
     }
+    mate_status_retries = mate_mx_status();
     mate_status_update_ms = millis() - mate_status_update_ms;
     // publish MX Charger status - with or without response
     snprintf(
@@ -221,11 +221,15 @@ void loop() {
       now_ms,
       mate_devices_found, mate_scan_retries,
       mate_status_mx_cnt_rx, mate_status_mx_cnt_err,
-      mate_status_buf, mate_status_retries,
+      mate_status_mx_hex, mate_status_retries,
       mate_status_update_ms
     );
-    spark::Log.info(mate_monitor_stats);
+    spark::Log.info("mate_monitor_stats (len %d):", strlen(mate_monitor_stats));
+    spark::Log.print(mate_monitor_stats);  // to print over 200 chars
+    spark::Log.print("\n");
     Particle.publish("fw-mate-net-monitor-status", mate_monitor_stats);
     spark::Log.info("Particle.publish(\"fw-mate-net-monitor-status\", ...) done");
     return;
 }
+
+// {"uptime_ms": 6302, "mate_devices_found": "0x0", "mate_scan_retries": 3, "mate_status_mx_cnt_rx": 0, "mate_status_mx_cnt_err": 0, "mate_status_mx": 0x, "mate_~
