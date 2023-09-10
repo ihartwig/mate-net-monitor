@@ -44,13 +44,12 @@ const pin_t PIN_LED = D7;
 // uarts config
 SerialLogHandler logHandler;  // default to Serial on debug USB
 MAX3100Serial mate_uart = MAX3100Serial(MATE_UART_XTAL_FREQ_KHZ, PIN_MATE_UART_CS, PIN_MATE_UART_IRQ);
-MateControllerProtocol mate_bus(mate_uart);  // MATE system connected to UART1
+MateControllerProtocol mate_bus(mate_uart); // connect mate_bus to this Steam9b supporting port
+// MateControllerProtocol mate_bus(mate_uart, &Serial);  // debug to USB Serial
 
 // sw config
 SYSTEM_MODE(SEMI_AUTOMATIC);
 SYSTEM_THREAD(ENABLED);
-// const system_tick_t pub_status_int_ms = 300000;
-// system_tick_t pub_status_last_ms = 0;
 const system_tick_t mate_scan_int_ms = 1000;
 system_tick_t mate_scan_last_ms = 0;
 const system_tick_t mate_status_int_ms = 300000;
@@ -94,7 +93,7 @@ void setup() {
   digitalWrite(PIN_MAG_IND, PinState::LOW);  // on no blink
   // analogWrite(PIN_MAG_IND, 127, 5);  // 50% 5Hz blink effect
   Serial1.begin(MAG_UART_BAUD, SERIAL_8N1);
-  mate_bus.set_timeout(200);  // per-msg timeout 200ms
+  // mate_bus.set_timeout(200);  // per-msg; default timeout 100ms
   // expansion pins setup
   pinMode(PIN_EXP_ADC1, INPUT);
   pinMode(PIN_EXP_ADC2, INPUT);
@@ -126,6 +125,7 @@ int mate_bus_scan() {
   mate_devices_found = 0;  // bit mask of the mate devices found
   spark::Log.trace("mate_bus_scan(): looking for mate devices");
   while(!MATE_MX_PRSNT(mate_devices_found) && retries_used < MATE_RETRIES) {
+    mate_bus.scan_ports();
     // mate device ports from scan with -1 not found
     mate_port_hub = mate_bus.find_device(DeviceType::Hub);
     mate_port_fx = mate_bus.find_device(DeviceType::Fx);
@@ -139,6 +139,7 @@ int mate_bus_scan() {
     mate_devices_found |= (1 & (mate_port_mx!=-1))<<DeviceType::Mx;
     mate_devices_found |= (1 & (mate_port_flexnetdc!=-1))<<DeviceType::FlexNetDc;
     mate_devices_found |= (1 & (mate_port_dc!=-1))<<DeviceType::Dc;
+    retries_used++;
   }
   spark::Log.trace("mate_bus_scan(): exiting with devices 0x%x after %d retries", mate_devices_found, retries_used);
   return retries_used;
@@ -168,6 +169,7 @@ int mate_mx_status () {
       snprintf(((char *)&mate_status_mx_hex)+(i*2), 3, "%02x", mate_status_buf[i]);
     }
     // null terminator added by last snprintf
+    retries_used++;
   }
   spark::Log.trace("mate_mx_status(): exiting after %d retries", retries_used);
   return retries_used;
