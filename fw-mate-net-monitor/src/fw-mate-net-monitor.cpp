@@ -215,7 +215,7 @@ void loop() {
         "\"mate_scan_retries\": %d, "
         "\"mate_status_mx_cnt_rx\": %d, "
         "\"mate_status_mx_cnt_err\": %d, "
-        "\"mate_status_mx\": 0x%s, "
+        "\"mate_status_mx\": \"0x%s\", "
         "\"mate_status_retries\": %d, "
         "\"mate_status_update_ms\": %ld"
       "}",
