@@ -52,7 +52,7 @@ SYSTEM_MODE(SEMI_AUTOMATIC);
 SYSTEM_THREAD(ENABLED);
 // event timers - start with the longest negative so we have event on startup
 const system_tick_t mate_scan_int_ms = 1000;
-const system_tick_t mate_status_int_ms = 300000;
+const system_tick_t mate_status_int_ms = 180000;
 system_tick_t mate_scan_last_ms = -mate_status_int_ms;
 system_tick_t mate_status_last_ms = -mate_status_int_ms;
 #define PUB_BUFFER_LEN   (particle::protocol::MAX_EVENT_DATA_LENGTH)
@@ -205,6 +205,7 @@ void loop() {
     mate_status_retries = mate_mx_status();
     mate_status_update_ms = millis() - mate_status_update_ms;
     // publish MX Charger status - with or without response
+    // approx strlen 233 chars
     snprintf(
       (char *)&mate_monitor_stats,
       PUB_BUFFER_LEN,
@@ -231,5 +232,3 @@ void loop() {
     spark::Log.info("Particle.publish(\"fw-mate-net-monitor-status\", ...) done");
     return;
 }
-
-// {"uptime_ms": 6302, "mate_devices_found": "0x0", "mate_scan_retries": 3, "mate_status_mx_cnt_rx": 0, "mate_status_mx_cnt_err": 0, "mate_status_mx": 0x, "mate_~

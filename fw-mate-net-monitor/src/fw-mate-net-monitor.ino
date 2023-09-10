@@ -41,7 +41,7 @@ SYSTEM_MODE(SEMI_AUTOMATIC);
 SYSTEM_THREAD(ENABLED);
 // event timers - start with the longest negative so we have event on startup
 const system_tick_t mate_scan_int_ms = 1000;
-const system_tick_t mate_status_int_ms = 300000;
+const system_tick_t mate_status_int_ms = 180000;
 system_tick_t mate_scan_last_ms = -mate_status_int_ms;
 system_tick_t mate_status_last_ms = -mate_status_int_ms;
 #define PUB_BUFFER_LEN   (particle::protocol::MAX_EVENT_DATA_LENGTH)

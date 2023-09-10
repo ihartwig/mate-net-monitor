@@ -4,7 +4,7 @@ A Particle project named fw-mate-net-monitor
 
 This project implements the uMATE library on top of Particle Boron with a mate-net-monitor adapter board to act like the status screen on a MATE controller and save this data to a cloud database.
 
-More details on the [MATE-to-MX protocol](https://github.com/jorticus/pymate/blob/master/doc/protocol/Protocol.md) have been documented by jorticus - thank you! The simple implementation here requests the device type and status page from port 0 every 5 minutes. The bus is scanned more frequently (approx. every 1 second) to drive MATE Net LEDs.
+More details on the [MATE-to-MX protocol](https://github.com/jorticus/pymate/blob/master/doc/protocol/Protocol.md) have been documented by jorticus - thank you! The simple implementation here requests the device type and status page from port 0 every 3 minutes. The bus is scanned more frequently (approx. every 1 second) to drive MATE Net LEDs.
 
 #### LED Indicators:
 
