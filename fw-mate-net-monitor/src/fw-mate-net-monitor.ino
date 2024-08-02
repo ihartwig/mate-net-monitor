@@ -39,11 +39,12 @@ MateControllerProtocol mate_bus(mate_uart); // connect mate_bus to this Steam9b 
 // sw config
 SYSTEM_MODE(SEMI_AUTOMATIC);
 SYSTEM_THREAD(ENABLED);
-// event timers - start with the longest negative so we have event on startup
+// event timers - start with negative values for events sooner to startup
+const system_tick_t cloud_delay_ms = 30000;
 const system_tick_t mate_scan_int_ms = 1000;
 const system_tick_t mate_status_int_ms = 180000;
-system_tick_t mate_scan_last_ms = -mate_status_int_ms;
-system_tick_t mate_status_last_ms = -mate_status_int_ms;
+system_tick_t mate_scan_last_ms = -mate_scan_int_ms;
+system_tick_t mate_status_last_ms = -cloud_delay_ms;
 #define PUB_BUFFER_LEN   (particle::protocol::MAX_EVENT_DATA_LENGTH)
 #define MAX_BUFFER_LEN   (100)
 #define MATE_PACKET_LEN  (sizeof(packet_t) + 1)
