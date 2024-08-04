@@ -20,6 +20,7 @@ public:
     // Send a response to a received packet
     // type should match the type of command that this is responding to
     void send_response(PacketType type, response_t* response);
+    void send_response(PacketType type, uint8_t* data, uint8_t len);
 };
 
 

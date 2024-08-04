@@ -1,0 +1,12 @@
+{
+    "extensions.ignoreRecommendations": true,
+    "C_Cpp.default.configurationProvider": "particle.particle-vscode-core",
+    "files.associations": {
+        "*.ino": "cpp",
+        "istream": "cpp",
+        "locale": "cpp"
+    },
+    "particle.targetDevice": "e00fce682e3483a35566979a",
+    "particle.firmwareVersion": "6.1.0",
+    "particle.targetPlatform": "boron"
+}

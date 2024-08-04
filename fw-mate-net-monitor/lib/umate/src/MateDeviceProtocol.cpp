@@ -26,8 +26,15 @@ void MateDeviceProtocol::send_response(PacketType type, response_t* response)
         return;
 
     response->value = SWAPENDIAN_16(response->value);
-
-    // NOTE: This is only valid for commands 0-3.
-    // Other commands may require more bytes to be sent...
     send_data(type, reinterpret_cast<uint8_t*>(response), sizeof(response_t));
+}
+
+// Sends a response back to an attached MATE
+// when the response is a buffer
+void MateDeviceProtocol::send_response(PacketType type, uint8_t* data, uint8_t len)
+{
+    if (data == nullptr || len == 0)
+        return;
+    
+    send_data(type, data, len);
 }

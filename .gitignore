@@ -36,4 +36,6 @@ fw-test/target/*
 fw-test/fw-test.cpp
 fw-mate-net-monitor/target/*
 fw-mate-net-monitor/fw-mate-net-monitor.cpp
+fw-mate-net-mx-emulator/target/*
+fw-mate-net-mx-emulator/fw-mate-net-mx-emulator.cpp
 

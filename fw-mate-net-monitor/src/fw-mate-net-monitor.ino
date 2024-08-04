@@ -52,12 +52,12 @@ system_tick_t mate_status_last_ms = -cloud_delay_ms;
 #define MATE_RETRIES     3
 #define MATE_MX_PRSNT(x) (x & (0x1<<DeviceType::Mx))  // non-zero when MX is present
 uint8_t mate_status_buf[STATUS_RESP_SIZE+1];  // size from MateNetPort.h
-// mate device ports from scan with -1 not found
-int mate_port_hub;
-int mate_port_fx;
-int mate_port_mx;
-int mate_port_flexnetdc;
-int mate_port_dc;
+// mate device ports numbers from scan - default to -1 not found
+int mate_port_hub = -1;
+int mate_port_fx = -1;
+int mate_port_mx = -1;
+int mate_port_flexnetdc = -1;
+int mate_port_dc = -1;
 int mate_devices_found = 0;  // bit mask of the mate devices found
 // particle cloud variables
 int mate_status_mx_cnt_rx = 0;
