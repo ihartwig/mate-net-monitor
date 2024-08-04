@@ -1,6 +1,6 @@
 /*
  * Project fw-mate-net-monitor
- * Description: represents a MATE controller asking for status.
+ * Description: represents an MX charger that responds to scan and status requests.
  * Author: Ian Hartwig
  * Date:
  */
@@ -85,18 +85,21 @@ void setup() {
 
 void loop() {
     system_tick_t now_ms = millis();
-    // give log feedback that we haven't received any packets
+    // give feedback that terminal is alive but we haven't received any packets
     if (now_ms - disp_last_ms < disp_int_ms) {
       return;
     }
     else {
-      spark::Log.info(". ");
+      // print direct to usb serial so we don't have the header
+      Serial.print(". ");
+      Serial.flush();
+      disp_last_ms = now_ms;
     }
 
     have_packet = mate_bus.recv_packet(&port, &packet);
     if (have_packet) {
       spark::Log.info(String::format(
-        "\nrecv_packet: {type %d, addr 0x%x, param 0x%x}", packet.type, packet.addr, packet.param
+        "recv_packet: {type %d, addr 0x%x, param 0x%x}", packet.type, packet.addr, packet.param
       ));
       // respond to port scan with device type
       if(packet.type == PacketType::Read && packet.addr == 0) {
