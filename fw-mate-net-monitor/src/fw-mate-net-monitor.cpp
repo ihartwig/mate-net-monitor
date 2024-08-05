@@ -53,9 +53,10 @@ SYSTEM_THREAD(ENABLED);
 // event timers - start with negative values for events sooner to startup
 const system_tick_t cloud_delay_ms = 30000;
 const system_tick_t mate_scan_int_ms = 1000;
-const system_tick_t mate_status_int_ms = 180000;
+// const system_tick_t mate_status_int_ms = 180000;
+const system_tick_t mate_status_int_ms = 5000;
 system_tick_t mate_scan_last_ms = -mate_scan_int_ms;
-system_tick_t mate_status_last_ms = -cloud_delay_ms;
+system_tick_t mate_status_last_ms = -mate_status_int_ms;
 #define PUB_BUFFER_LEN   (particle::protocol::MAX_EVENT_DATA_LENGTH)
 #define MAX_BUFFER_LEN   (100)
 #define MATE_PACKET_LEN  (sizeof(packet_t) + 1)
@@ -120,12 +121,17 @@ void setup() {
 
 // sets a bit-mask of the devices found on bus
 // returns retries used until scan success or MATE_RETRIES is exceeded
-// retries until an MX Charger is found
+// retries until any other device on the bus is found or -1
 int mate_bus_scan() {
-  int retries_used = 0;
+  int retries_used = -1;
   mate_devices_found = 0;  // bit mask of the mate devices found
   spark::Log.trace("mate_bus_scan(): looking for mate devices");
-  for (; !MATE_MX_PRSNT(mate_devices_found) && retries_used < MATE_RETRIES; retries_used++) {
+  while ((!mate_devices_found) && ++retries_used < MATE_RETRIES) {
+    int available_bytes = mate_uart.availableBytes();
+    if (available_bytes) {
+      spark::Log.trace("mate_bus_scan(): purging read buf");
+    }
+    mate_uart.readBufPurge();
     mate_bus.scan_ports();
     // mate device ports from scan with -1 not found
     mate_port_hub = mate_bus.find_device(DeviceType::Hub);
@@ -147,12 +153,18 @@ int mate_bus_scan() {
 
 
 // gathers a new MX Charger status and transcribes that to ascii-hex
-// returns retries used until new status or MATE_RETRIES is exceeded
+// when one is on a known port set by mate_port_mx.
+// returns retries used until new status or MATE_RETRIES is exceeded or -1
 int mate_mx_status () {
-  int retries_used = 0;
+  int retries_used = -1;
   bool new_status = false;
   spark::Log.trace("mate_mx_status(): looking for MX Charger status");
-  for (; !new_status && retries_used < MATE_RETRIES; retries_used++) {
+  while (mate_port_mx != -1 && !new_status && ++retries_used < MATE_RETRIES) {
+    int available_bytes = mate_uart.availableBytes();
+    if (available_bytes) {
+      spark::Log.trace("mate_mx_status(): purging read buf");
+    }
+    mate_uart.readBufPurge();
     new_status = mate_bus.read_status(mate_status_buf, STATUS_RESP_SIZE, 1, mate_port_mx);
     // todo: maybe we should timeout for this. apparently there is?
     if (new_status) {
@@ -185,26 +197,19 @@ void loop() {
     }
     mate_scan_last_ms = now_ms;
     // look for devices - this is mostly diagnostic
-    mate_status_update_ms = millis();
+    // sets mate_devices_found and mate_port_mx
     mate_scan_retries = mate_bus_scan();
-    // and 
     if (mate_devices_found) {
       analogWrite(PIN_MATE_IND, 127, 5); // 50% 5Hz blink effect
     } else {
       digitalWrite(PIN_MAG_IND, PinState::LOW);  // on no blink
     }
-    // continue to devices statuses
+    // continue to get MX Charger status if we see one is connected
     if (now_ms - mate_status_last_ms < mate_status_int_ms) {
       return;
     }
-    mate_status_last_ms = now_ms;
-    // and get MX Charger status, regardless of bus scan result
-    // default to looking for devices on port 0 (direct connect)
-    if(!MATE_MX_PRSNT(mate_devices_found)) {
-      mate_port_mx = 0;
-    }
     mate_status_retries = mate_mx_status();
-    mate_status_update_ms = millis() - mate_status_update_ms;
+    mate_status_last_ms = now_ms;
     // publish MX Charger status - with or without response
     // approx strlen 233 chars
     snprintf(

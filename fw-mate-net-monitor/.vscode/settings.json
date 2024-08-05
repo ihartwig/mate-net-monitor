@@ -6,7 +6,7 @@
         "istream": "cpp",
         "locale": "cpp"
     },
-    "particle.targetDevice": "e00fce682e3483a35566979a",
+    "particle.targetDevice": "e00fce6829f72324f45dea83",
     "particle.firmwareVersion": "6.1.0",
     "particle.targetPlatform": "boron"
 }

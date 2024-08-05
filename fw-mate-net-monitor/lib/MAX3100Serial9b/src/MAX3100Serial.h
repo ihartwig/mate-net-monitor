@@ -80,16 +80,18 @@ public:
   int readConf();
   int readData();
   void end();
+  bool availableForWrite(size_t length);
+  int availableBytes();
+  void readBufPurge();
+  // implementation of Stream9b virtual functions
+  int16_t read9b();
+  size_t write9b(uint16_t bytes);
+  // implementation of Stream virtual functions
+  int read();
+  size_t write(uint8_t byte);
+  int available();
   int peek();
-  int availableForWrite(size_t length);
-
-  virtual size_t write(uint8_t byte);
-  virtual size_t write9b(uint16_t bytes);
-  virtual int read();
-  virtual int16_t read9b();
-  virtual int available();
-  virtual int availableBytes();
-  virtual void flush();
+  void flush();
 
   // provides and implementation of
   // virtual size_t write(const uint8_t *buffer, size_t size);

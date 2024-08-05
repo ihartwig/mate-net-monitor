@@ -16,11 +16,24 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-  The author may be reached at https://www.ewan.cc/ for queries.
-
 
   A Maxim Integrated MAX3100 external USART/UART communication library for
   Arduino, built to be source code compatible with the Serial library, etc.
+
+  The Particle version implements an interrupt routine with read and write
+  circular buffers. Data is transferred from the MAX3100 immediately by _isr()
+  into buffers of a fixed size unless if they are full. Example size 8:
+  Empty:
+  buf[0] [1] [2] [3] [4] [5] [6] [7]
+     tail ^ head
+  With availableBytes() 2 in [1] and [2]:
+  buf[0] [1] [2] [3] [4] [5] [6] [7]
+     tail ^       ^ head
+  Full:
+  buf[0] [1] [2] [3] [4] [5] [6] [7]
+             head ^   ^ tail
+  Since head must point at an empty data location only size-1 locations are
+  usable out of the allocated space size.
 */
 
 #include <MAX3100Serial.h>
@@ -311,17 +324,6 @@ int MAX3100Serial::available()
 }
 
 
-/* return count of bytes in the read buffer */
-int MAX3100Serial::availableBytes()
-{
-  if (_read_buf_head < _read_buf_tail) {
-    return (_read_buf_head + READ_BUF_SIZE) - _read_buf_tail;
-  } else {
-    return _read_buf_head - _read_buf_tail;
-  }
-}
-
-
 int MAX3100Serial::_busy()
 {
   // T flag is not set
@@ -388,10 +390,24 @@ int MAX3100Serial::peek()
 
 
 /* return 1 if there is room for length in the write buffer else 0 */
-int MAX3100Serial::availableForWrite(size_t length)
+bool MAX3100Serial::availableForWrite(size_t length)
 {
   size_t available_length =
     ((WRITE_BUF_SIZE-1) - _write_buf_head) + _write_buf_tail;
   available_length %= WRITE_BUF_SIZE;  // when wrapped-around
   return available_length >= length;
+}
+
+
+/* return count of bytes in the read buffer */
+int MAX3100Serial::availableBytes()
+{
+  return ((READ_BUF_SIZE + _read_buf_head) - _read_buf_tail) % READ_BUF_SIZE;
+}
+
+
+/* drop all bytes in the read buffer */
+void MAX3100Serial::readBufPurge()
+{
+  _read_buf_tail = _read_buf_head;
 }
