@@ -227,43 +227,52 @@ void MAX3100Serial::_readBufAppend(uint16_t word)
 }
 
 
-/* respond to IRQ active for T or R set */
+/* respond to IRQ active for T or R set in FALLING edge */
 void MAX3100Serial::_isr()
 {
   count_irq++;
   int isr_read_count = 0;
   int isr_write_count = 0;
+  uint16_t wword = 0;
+  uint16_t rword = 0;
   uint16_t cword = _transfer16b(MAX3100_CMD_READ_CONF);
-  // first check for new data, since this this op clears both IRQ types
-  // respond R set by reading all data
-  while ((cword & MAX3100_CONF_R) &&
-         (cword & MAX3100_CONF_SHDN) == 0 &&
-         (isr_read_count < ISR_READ_MAX)) {
-    uint16_t rword = _transfer16b(MAX3100_CMD_READ_DATA);
-    _readBufAppend(rword & MASK_9b);
-    // for next loop
-    cword = _transfer16b(MAX3100_CMD_READ_CONF);
-    isr_read_count++;
-  }
-  // then check for T set which lets us write out data
-  while ((_write_buf_head != _write_buf_tail) &&
-         (cword & MAX3100_CONF_SHDN) == 0 &&
-         (cword & MAX3100_CONF_T) &&
-         (isr_write_count < ISR_WRITE_MAX)) {
-    // pick from the write buf to send
-    uint16_t wword = _write_buf[_write_buf_tail];
-    uint16_t rword = 0;
-    _write_buf_tail = (_write_buf_tail + 1) % WRITE_BUF_SIZE;
-    rword = _transfer16b(MAX3100_CMD_WRITE_DATA | (wword & MASK_9b));
-    // the write might have come with read data too, so capture that too
-    if (rword & MAX3100_CONF_R) {
-      _readBufAppend(rword & MASK_9b);
+  // reading and writing data to the MAX3100 can happen in the same transaction.
+  // R is set when new data is available in FIFO - /ISR low when R is set.
+  // T is set when transmit buffer is empty - /ISR goes low on buffer becoming
+  // empty and is cleared after a read data op.
+  // this logic continues to run until all the interrupt setting conditions are
+  // clear which is important to work with the FALLING edge trigger.
+  while ((cword & MAX3100_CONF_R) || (cword & MAX3100_CONF_T)) {
+    // try to write and read at the same time if conditions allow it
+    if ((cword & MAX3100_CONF_SHDN) == 0 && 
+        (cword & MAX3100_CONF_T) && _write_buf_head != _write_buf_tail) {
+      wword = _write_buf[_write_buf_tail];
+      rword = 0;
+      _write_buf_tail = (_write_buf_tail + 1) % WRITE_BUF_SIZE;
+      rword = _transfer16b(MAX3100_CMD_WRITE_DATA | (wword & MASK_9b));
+      // the write might have come with read data too, so capture that too
+      if (rword & MAX3100_CONF_R) {
+        _readBufAppend(rword & MASK_9b);
+      }
+      // count metrics
+      count_sent++;
+      isr_write_count++;
     }
-    // count metrics
-    count_sent++;
+    // read only - must not be ready to write
+    else {
+      rword = _transfer16b(MAX3100_CMD_READ_DATA);
+      // save data when available (R was set)
+      if (rword & MAX3100_CONF_R) {
+        _readBufAppend(rword & MASK_9b);
+        isr_read_count++;
+      }
+      // or this should have cleared /IRQ (only T was set)
+      else {
+        break;
+      }
+    }
     // for next loop
     cword = _transfer16b(MAX3100_CMD_READ_CONF);
-    isr_write_count++;
   }
   return;
 }
@@ -299,6 +308,17 @@ int MAX3100Serial::available()
 {
   // _read_buf is empty when head == tail
   return !(_read_buf_head == _read_buf_tail);
+}
+
+
+/* return count of bytes in the read buffer */
+int MAX3100Serial::availableBytes()
+{
+  if (_read_buf_head < _read_buf_tail) {
+    return (_read_buf_head + READ_BUF_SIZE) - _read_buf_tail;
+  } else {
+    return _read_buf_head - _read_buf_tail;
+  }
 }
 
 

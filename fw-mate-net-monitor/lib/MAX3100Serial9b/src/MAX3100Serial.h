@@ -54,8 +54,6 @@ chosen by the calling code.
 
 #define READ_BUF_SIZE 1024  // in uint16_t words
 #define WRITE_BUF_SIZE 256  // in uint16_t words
-#define ISR_READ_MAX 8  // MAX3100 has 8-word FIFO
-#define ISR_WRITE_MAX 8  // to match
 
 /**
  * Stream requires implementation of:
@@ -90,6 +88,7 @@ public:
   virtual int read();
   virtual int16_t read9b();
   virtual int available();
+  virtual int availableBytes();
   virtual void flush();
 
   // provides and implementation of

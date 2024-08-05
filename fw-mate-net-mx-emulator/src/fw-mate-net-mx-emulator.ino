@@ -46,8 +46,10 @@ bool have_packet = false;
 response_t response = {0};
 uint8_t status_response[STATUS_RESP_SIZE] = {0x0U, 0x1U, 0x2U, 0x3U, 0x4U, 0x5U, 0x6U, 0x7U, 0x8U, 0x0AU, 0xBU, 0xCU, 0xDU};
 // event timers - start with negative values for events sooner to startup
-const system_tick_t disp_int_ms = 1000;
+const system_tick_t disp_int_ms = 5000;
+const system_tick_t dots_int_ms = 1200;
 system_tick_t disp_last_ms = -disp_int_ms;
+system_tick_t dots_last_ms = -dots_int_ms;
 
 void setup() {
   // mate net pin setup
@@ -85,19 +87,29 @@ void setup() {
 
 void loop() {
     system_tick_t now_ms = millis();
-    // give feedback that terminal is alive but we haven't received any packets
-    if (now_ms - disp_last_ms < disp_int_ms) {
-      return;
+    // diagnostic counters
+    if (now_ms - disp_last_ms >= disp_int_ms) {
+      Serial.print("\n");
+      Serial.flush();
+      spark::Log.info(String::format(
+        "MAX3100Serial: count_irq: %d, count_sent: %d, count_read: %d, count_read_err: %d, count_overflow: %d, available_bytes: %d",
+        mate_uart.count_irq, mate_uart.count_sent, mate_uart.count_read, mate_uart.count_read_err, mate_uart.count_overflow, mate_uart.availableBytes()
+      ));
+      disp_last_ms = now_ms;
     }
-    else {
+    // give feedback that terminal is alive but we haven't received any packets
+    if (now_ms - dots_last_ms >= dots_int_ms) {
       // print direct to usb serial so we don't have the header
       Serial.print(". ");
       Serial.flush();
-      disp_last_ms = now_ms;
+      dots_last_ms = now_ms;
     }
-
+    // try to receive mate packets
     have_packet = mate_bus.recv_packet(&port, &packet);
     if (have_packet) {
+      dots_last_ms = now_ms;
+      Serial.print("\n");
+      Serial.flush();
       spark::Log.info(String::format(
         "recv_packet: {type %d, addr 0x%x, param 0x%x}", packet.type, packet.addr, packet.param
       ));
