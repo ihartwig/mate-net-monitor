@@ -40,17 +40,15 @@ MateControllerProtocol mate_bus(mate_uart); // connect mate_bus to this Steam9b 
 SYSTEM_MODE(SEMI_AUTOMATIC);
 SYSTEM_THREAD(ENABLED);
 // event timers - start with negative values for events sooner to startup
-const system_tick_t cloud_delay_ms = 30000;
-const system_tick_t mate_scan_int_ms = 1000;
-// const system_tick_t mate_status_int_ms = 180000;
-const system_tick_t mate_status_int_ms = 5000;
+const system_tick_t mate_scan_int_ms = 2000;  // also used for status updates
+const system_tick_t cloud_update_int_ms = 30000;
 system_tick_t mate_scan_last_ms = -mate_scan_int_ms;
-system_tick_t mate_status_last_ms = -mate_status_int_ms;
+system_tick_t cloud_update_last_ms = -cloud_update_int_ms;
 #define PUB_BUFFER_LEN   (particle::protocol::MAX_EVENT_DATA_LENGTH)
 #define MAX_BUFFER_LEN   (100)
 #define MATE_PACKET_LEN  (sizeof(packet_t) + 1)
 #define MATE_RESP_LEN    (sizeof(response_t) + 1)
-#define MATE_RETRIES     3
+#define MATE_RETRIES     9
 #define MATE_MX_PRSNT(x) (x & (0x1<<DeviceType::Mx))  // non-zero when MX is present
 uint8_t mate_status_buf[STATUS_RESP_SIZE+1];  // size from MateNetPort.h
 // mate device ports numbers from scan - default to -1 not found
@@ -63,7 +61,7 @@ int mate_devices_found = 0;  // bit mask of the mate devices found
 // particle cloud variables
 int mate_status_mx_cnt_rx = 0;
 int mate_status_mx_cnt_err = 0;
-system_tick_t mate_status_update_ms = 0;
+system_tick_t mate_status_last_ms = 0;  // timestamp of the last status update
 char mate_monitor_stats[PUB_BUFFER_LEN];
 char mate_status_mx_hex[(STATUS_RESP_SIZE*2)+1];  // encode response in hex chars
 
@@ -96,12 +94,7 @@ void setup() {
   // auto logTraceHandler = new StreamLogHandler(Serial, LOG_LEVEL_TRACE);
   // logManager->addHandler(logTraceHandler);
   spark::Log.trace(String::format("%s: %s", Time.timeStr().c_str(), "MATE emulator: Hello world!"));
-  // particle cloud variables
-  Particle.variable("mate_scan_last_ms", mate_scan_last_ms);
-  Particle.variable("mate_devices_found", mate_devices_found);
-  Particle.variable("mate_status_mx_cnt_rx", mate_status_mx_cnt_rx);
-  Particle.variable("mate_status_mx_cnt_err", mate_status_mx_cnt_err);
-  Particle.variable("mate_status_mx_hex", mate_status_mx_hex);
+  // particle cloud
   Particle.connect();
   spark::Log.info("MATE emulator: particle cloud ready");
   // digitalWrite(D7, PinState::LOW);
@@ -158,6 +151,7 @@ int mate_mx_status () {
     // todo: maybe we should timeout for this. apparently there is?
     if (new_status) {
       mate_status_mx_cnt_rx++;
+      mate_status_last_ms = millis();
     } else {
       mate_status_mx_cnt_err++;
     }
@@ -165,7 +159,7 @@ int mate_mx_status () {
   // convert to hex string byte of status response at a time
   if (!new_status) {
     // blank out mate_status_buf if there was no new status
-    memset((char *)&mate_status_mx_hex, 0, STATUS_RESP_SIZE);
+    memset((char *)&mate_status_buf, 0, STATUS_RESP_SIZE);
   }
   for (int i = 0; i < STATUS_RESP_SIZE; i++) {
     snprintf(((char *)(&mate_status_mx_hex[i*2])), 3, "%02x", mate_status_buf[i]);
@@ -177,53 +171,53 @@ int mate_mx_status () {
 
 
 void loop() {
-    int mate_scan_retries = 0;
-    int mate_status_retries = 0;
-    // skip the rest if we haven't reach an action interval yet
-    system_tick_t now_ms = millis();
-    if (now_ms - mate_scan_last_ms < mate_scan_int_ms) {
-      return;
-    }
-    mate_scan_last_ms = now_ms;
-    // look for devices - this is mostly diagnostic
-    // sets mate_devices_found and mate_port_mx
-    mate_scan_retries = mate_bus_scan();
-    if (mate_devices_found) {
-      analogWrite(PIN_MATE_IND, 127, 5); // 50% 5Hz blink effect
-    } else {
-      digitalWrite(PIN_MAG_IND, PinState::LOW);  // on no blink
-    }
-    // continue to get MX Charger status if we see one is connected
-    if (now_ms - mate_status_last_ms < mate_status_int_ms) {
-      return;
-    }
-    mate_status_retries = mate_mx_status();
-    mate_status_last_ms = now_ms;
-    // publish MX Charger status - with or without response
-    // approx strlen 233 chars
-    snprintf(
-      (char *)&mate_monitor_stats,
-      PUB_BUFFER_LEN,
-      "{"
-        "\"uptime_ms\": %ld, "
-        "\"mate_devices_found\": \"0x%x\", "
-        "\"mate_scan_retries\": %d, "
-        "\"mate_status_mx_cnt_rx\": %d, "
-        "\"mate_status_mx_cnt_err\": %d, "
-        "\"mate_status_mx\": \"0x%s\", "
-        "\"mate_status_retries\": %d, "
-        "\"mate_status_update_ms\": %ld"
-      "}",
-      now_ms,
-      mate_devices_found, mate_scan_retries,
-      mate_status_mx_cnt_rx, mate_status_mx_cnt_err,
-      mate_status_mx_hex, mate_status_retries,
-      mate_status_update_ms
-    );
-    spark::Log.info("mate_monitor_stats (len %d):", strlen(mate_monitor_stats));
-    spark::Log.print(mate_monitor_stats);  // to print over 200 chars
-    spark::Log.print("\n");
+  int mate_scan_retries = 0;
+  int mate_status_retries = 0;
+  // skip the rest if we haven't reach an action interval yet
+  system_tick_t now_ms = millis();
+  if (now_ms - mate_scan_last_ms < mate_scan_int_ms) {
+    return;
+  }
+  mate_scan_last_ms = now_ms;
+  // look for devices - this is mostly diagnostic
+  // sets mate_devices_found and mate_port_mx
+  mate_scan_retries = mate_bus_scan();
+  if (mate_devices_found) {
+    analogWrite(PIN_MATE_IND, 127, 5); // 50% 5Hz blink effect
+  } else {
+    digitalWrite(PIN_MATE_IND, PinState::HIGH);  // on no blink
+  }
+  // continue to get MX Charger status if we see one is connected
+  // uses mate_port_mx and sets mate_scan_retries, mate_status_last_ms, etc
+  mate_status_retries = mate_mx_status();
+  // publish MX Charger status - with or without response
+  // approx strlen 236~300 chars
+  snprintf(
+    (char *)&mate_monitor_stats,
+    PUB_BUFFER_LEN,
+    "{"
+      "\"uptime_ms\": %ld, "
+      "\"mate_devices_found\": \"0x%x\", "
+      "\"mate_scan_retries\": %d, "
+      "\"mate_status_mx_cnt_rx\": %d, "
+      "\"mate_status_mx_cnt_err\": %d, "
+      "\"mate_status_mx\": \"0x%s\", "
+      "\"mate_status_retries\": %d, "
+      "\"mate_status_last_ms\": %ld"
+    "}",
+    millis(),
+    mate_devices_found, mate_scan_retries,
+    mate_status_mx_cnt_rx, mate_status_mx_cnt_err,
+    mate_status_mx_hex, mate_status_retries,
+    mate_status_last_ms
+  );
+  spark::Log.info("mate_monitor_stats (len %d):", strlen(mate_monitor_stats));
+  spark::Log.print(mate_monitor_stats);  // to print over 200 chars
+  spark::Log.print("\n");
+  // cloud update at a slower rate
+  if (now_ms - cloud_update_last_ms < cloud_update_int_ms) {
     Particle.publish("fw-mate-net-monitor-status", mate_monitor_stats);
     spark::Log.info("Particle.publish(\"fw-mate-net-monitor-status\", ...) done");
-    return;
+  }
+  return;
 }
