@@ -178,6 +178,14 @@ DeviceType MateControllerProtocol::scan(uint8_t port)
     }
     else {
         int16_t value = query(0x00, 0, port);
+        // MX sends extra data to scan
+        // recv_data(): [0]=0x2
+        // recv_data(): [1]=0x1
+        // recv_data(): [2]=0x3
+        // recv_data(): [3]=0x0
+        // recv_data(): [4]=0x6
+        // only look at byte 2, which is lower half of value
+        value &= 0xFF;
         if (value >= 0 && value < DeviceType::MaxDevices) {
             return (DeviceType)value;
         }

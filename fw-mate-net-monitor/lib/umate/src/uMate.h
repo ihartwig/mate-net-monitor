@@ -7,7 +7,7 @@
 // #endif
 
 // AVR is little-endian, but protocol is big-endian. Must swap bytes...
-// #define SWAPENDIAN
+#define SWAPENDIAN
 // or comment this out to compile for a big-endian platforms
 #ifdef SWAPENDIAN
 #define SWAPENDIAN_16(x) (uint16_t)((((x) & 0xFF00) >> 8) | (((x) & 0x00FF) << 8))

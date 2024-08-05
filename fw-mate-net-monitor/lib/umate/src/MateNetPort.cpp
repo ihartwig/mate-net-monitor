@@ -109,6 +109,7 @@ CommsStatus MateNetPort::recv_data(OUT uint8_t* byte0, OUT uint8_t* data, OUT ui
             return CommsStatus::BufferOverrun;
         }
 
+        // spark::Log.trace(String::format("recv_data(): [%d]=0x%x", rx_idx, b));
         rx_buffer[rx_idx++] = b;
 
         // NOTE: This makes the assumption that bytes are received back-to-back.

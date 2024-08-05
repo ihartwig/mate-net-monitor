@@ -202,7 +202,7 @@ void loop() {
   // uses mate_port_mx and sets mate_scan_retries, mate_status_last_ms, etc
   mate_status_retries = mate_mx_status();
   // publish MX Charger status - with or without response
-  // approx strlen 233 chars
+  // approx strlen 236~300 chars
   snprintf(
     (char *)&mate_monitor_stats,
     PUB_BUFFER_LEN,
