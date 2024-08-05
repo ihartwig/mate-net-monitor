@@ -125,9 +125,10 @@ void loop() {
       // respond to port scan with device type
       if(packet.type == PacketType::Read && packet.addr == 0) {
         response.value = DeviceType::Mx;
+        response.value |= 0x100;  // real MX does this for some reason
         mate_bus.send_response(PacketType::Read, &response);
         spark::Log.info(String::format(
-          "send_response: DeviceType %d", response.value
+          "send_response: Unknown 0x1 + DeviceType %d", response.value
         ));
       }
       // respond to status request with random data
