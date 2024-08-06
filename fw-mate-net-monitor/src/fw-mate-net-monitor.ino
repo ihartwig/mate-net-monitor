@@ -22,7 +22,7 @@ const pin_t PIN_MAG_RX = D5;
 const pin_t PIN_MAG_TX = D4;
 const pin_t PIN_MAG_IND = D2;
 const pin_t PIN_MAG_DE = D3;
-const unsigned long MAG_UART_BAUD = 9600;
+const unsigned long MAG_UART_BAUD = 19200;
 // expansion pins
 const pin_t PIN_EXP_ADC1 = A1;
 const pin_t PIN_EXP_ADC2 = A2;
@@ -42,15 +42,22 @@ SYSTEM_THREAD(ENABLED);
 // event timers - start with negative values for events sooner to startup
 const system_tick_t mate_scan_int_ms = 2000;  // also used for status updates
 const system_tick_t cloud_update_int_ms = 30000;
+const system_tick_t mag_status_old_ms =  1000;
 system_tick_t mate_scan_last_ms = -mate_scan_int_ms;
 system_tick_t cloud_update_last_ms = -cloud_update_int_ms;
+system_tick_t mag_status_last_ms = -mag_status_old_ms;
+// data lengths
 #define PUB_BUFFER_LEN   (particle::protocol::MAX_EVENT_DATA_LENGTH)
 #define MAX_BUFFER_LEN   (100)
 #define MATE_PACKET_LEN  (sizeof(packet_t) + 1)
 #define MATE_RESP_LEN    (sizeof(response_t) + 1)
 #define MATE_RETRIES     9
 #define MATE_MX_PRSNT(x) (x & (0x1<<DeviceType::Mx))  // non-zero when MX is present
-uint8_t mate_status_buf[STATUS_RESP_SIZE+1];  // size from MateNetPort.h
+#define MAGNET_INV_PACKET_LEN 21
+#define MAGNET_INV_START_TIMEOUT_MS 35 // < 100-14-8-10-10-10ms gap for reset
+#define MAGNET_BYTE_TIMEOUT_MS 7 // ~10ms gap between msg types
+#define MAGNET_NC_TIMEOUT_MS 125
+#define MAGNET_INV_MODEL 0x73 // MS4448PAE
 // mate device ports numbers from scan - default to -1 not found
 int mate_port_hub = -1;
 int mate_port_fx = -1;
@@ -58,13 +65,46 @@ int mate_port_mx = -1;
 int mate_port_flexnetdc = -1;
 int mate_port_dc = -1;
 int mate_devices_found = 0;  // bit mask of the mate devices found
+// mag net Inverter Data
+int magnet_ok_cnt; // this might roll over, but we don't care
+int magnet_bad_cnt;
+int magnet_nc_cnt;
+int magnet_dat_cnt;
+int magnet_q_cnt;
+typedef struct MagNetInvMsg {
+// Name              Byte   Comments
+  uint8_t inv_status;   // 0      See MagInvStatus
+  uint8_t inv_fault;    // 1      See MagInvFault
+  uint16_t dc_volts;     // 2,3    1 count = 0.1V (real range = 0-100.0V)
+  uint16_t dc_amps;      // 4,5    0-500 amps DC
+  uint8_t ac_volts_out; // 6      0-150 Volts ac RMS MS Inverter rev 3.0 and later
+  uint8_t ac_volts_in;  // 7      0-255 Volts ac peak MS Inverter rev 3.0 and later
+  uint8_t inv_led;      // 8      IF = 0, then INV LED is off else INV Led on remote ON
+  uint8_t chg_led;      // 9      IF = 0, then CHG LED is off else CHG Led on remote ON*/
+  uint8_t inv_rev;      // 10     i.e. 10 = 1.0 Non-zero is mandatory for remote startup
+  uint8_t batt_temp;    // 11     0-150 = 0-150 deg C
+  uint8_t tran_temp;    // 12     0-150 = 0-150 deg C
+  uint8_t fet_temp;     // 13     0-150 = 0-150 deg C*/
+  uint8_t inv_model;    // 14     See MagInvModel
+  // uint8_t blank;        // 15
+  // 21 bit version
+  uint8_t stack_mode;   // 15     See MagInvStackMode
+  uint8_t ac_amps_in;   // 16     1 count = 1 Amp AC
+  uint8_t ac_amps_out;  // 17     1 count = 1 Amp AC
+  uint16_t ac_hz;       // 18,19  1 count = 0.1Hz
+  uint8_t blank;        // 20
+} MagNetInvMsg;
+MagNetInvMsg new_inv_msg;
+MagNetInvMsg last_inv_msg;
 // particle cloud variables
+uint8_t mate_status_buf[STATUS_RESP_SIZE+1];  // size from MateNetPort.h
 int mate_status_mx_cnt_rx = 0;
 int mate_status_mx_cnt_err = 0;
 system_tick_t mate_status_last_ms = 0;  // timestamp of the last status update
 char mate_monitor_stats[PUB_BUFFER_LEN];
 char mate_status_mx_hex[(STATUS_RESP_SIZE*2)+1];  // encode response in hex chars
 char mate_status_mx[PUB_BUFFER_LEN];
+char mag_status_inv[PUB_BUFFER_LEN];
 
 
 void setup() {
@@ -146,10 +186,10 @@ void mate_mx_status_unpack(uint8_t *mate_status_buf, char *mx_status_buf, system
     PUB_BUFFER_LEN,
     "{"
       "\"uptime_ms\": %ld, "
-      "\"mx_bat_ah\": \"%d\", "
+      "\"mx_today_ah\": \"%d\", "
+      "\"mx_today_kwh\": %.1f, "
       "\"mx_bat_cur_a\": %.1f, "
       "\"mx_pv_cur_a\": %.1f, "
-      "\"mx_bat_kwh\": %.1f, "
       "\"mx_aux_mode_state\": \"0x%x\", "
       "\"mx_status\": \"0x%x\", "
       "\"mx_errors\": \"0x%x\", "
@@ -159,14 +199,14 @@ void mate_mx_status_unpack(uint8_t *mate_status_buf, char *mx_status_buf, system
     update_ms,
     // The following was determined by poking values at the MATE unit...
     ((values[0] & 0x70) >> 4) | values[4],  // bat Ah - ignore bit7 (if 0, MATE hides the AH reading)
+    (float)((values[3] << 8) | values[8]) / 10.0, //  kWh
     (float)((128 + (int8_t)values[2]) % 256) + bat_current_milli,  // bat current A
     (float)((128 + (int8_t)values[1]) % 256),  // pv current A
-    (float)((values[3] << 8) | values[8]) / 10.0, //  kWh
-    values[5],
-    values[6],
-    values[7],
-    (float)SWAPENDIAN_16(*(uint16_t *)(&values[9])) / 10.0,
-    (float)SWAPENDIAN_16(*(uint16_t *)(&values[11])) / 10.0
+    values[5],  // aux mode (& 0x3F) state (& 0x40 == 0x40)
+    values[6],  // status bitfield
+    values[7],  // error bitfield
+    (float)SWAPENDIAN_16(*(uint16_t *)(&values[9])) / 10.0,  // bat v in V
+    (float)SWAPENDIAN_16(*(uint16_t *)(&values[11])) / 10.0  // pv v in V
   );
 }
 
@@ -208,7 +248,136 @@ int mate_mx_status () {
 }
 
 
+/*
+ * Find and read an inverter message from Serial1 to buf. Waits for
+ * MAGNET_INV_START_TIMEOUT_MS but not more than MAGNET_NC_TIMEOUT_MS so as to
+ * not block the main loop.
+ *
+ * Returns: 0 on complete message, -1 incomplete buffer, -2 nc timeout
+ */
+int magnet_read_inv_msg(char* buf, int buf_len) {
+  int buf_i = 0;
+  int new_byte = 0;
+  bool inv_sync = false;
+  volatile unsigned long new_byte_time = 0;
+  volatile unsigned long last_byte_time = millis();
+  while(true) {
+    // read byte
+    if(Serial1.available()) {
+      new_byte = Serial1.read();
+    }
+    else {
+      new_byte = -1;
+    }
+    // handle new byte
+    new_byte_time = millis();
+    if(new_byte >= 0) {
+      // wait for long gap before inverter talks
+      if(new_byte_time > last_byte_time + MAGNET_INV_START_TIMEOUT_MS) {
+        inv_sync = true;
+        // also need to reset the byte time since we may have been looking a while
+        last_byte_time = new_byte_time;
+      }
+      // and just keep spinning if we haven't found it
+      if(!inv_sync) {
+        continue;
+      }
+      // too much time between bytes means another dev is talking now; abort
+      else if (new_byte_time > last_byte_time + MAGNET_BYTE_TIMEOUT_MS) {
+        return -1; // dropped packet
+      }
+      // record the new byte
+      buf[buf_i] = new_byte;
+      buf_i++;
+      last_byte_time = new_byte_time;
+      // check if we have a complete packet
+      if(buf_i == MAGNET_INV_PACKET_LEN) {
+        return 0; // filled packet
+      }
+      else if (buf_i >= MAGNET_INV_PACKET_LEN) {
+        return -3; // oops! stop the overflow
+      }
+      // else keep looking for bytes
+    }
+    // let the loop move forward if we're not finding anything
+    else if (new_byte_time > last_byte_time + MAGNET_NC_TIMEOUT_MS) {
+      return -2;
+    }
+    // else: keep trying to read
+    // break;
+  } // end while
+  return -3;
+}
+
+
+int magnet_interp_inv_msg(char* buf, char* inv_status, int buf_len) {
+  MagNetInvMsg inv_msg;
+  // fix endianness for 2-byte fields
+  uint8_t swap;
+  swap = buf[2];
+  buf[2] = buf[3];
+  buf[3] = swap;
+  swap = buf[4];
+  buf[4] = buf[5];
+  buf[5] = swap;
+  swap = buf[18];
+  buf[18] = buf[19];
+  buf[19] = swap;
+  // shove the inverter packet into struct
+  memcpy(&inv_msg, buf, sizeof(inv_msg));
+
+  // sanity check this packet data
+  if(inv_msg.inv_model != MAGNET_INV_MODEL) {
+    return -5;
+  }
+
+  // convert to json string format
+  snprintf(
+    inv_status,
+    PUB_BUFFER_LEN,
+    "{"
+      "\"inv_status\": %d, "
+      "\"dc_volts\": %d, "
+      "\"dc_amps\": %d, "
+      "\"ac_volts_out\": %d, "
+      "\"ac_volts_in\": %d, "
+      "\"batt_temp\": %d, "
+      "\"tran_temp\": %d, "
+      "\"fet_temp\": %d, "
+      "\"ac_amps_in\": %d, "
+      "\"ac_amps_out\": %d, "
+      "\"ac_hz\": %d"
+    "}",
+    inv_msg.inv_status,
+    inv_msg.dc_volts,
+    inv_msg.dc_amps,
+    inv_msg.ac_volts_out,
+    inv_msg.ac_volts_in,
+    inv_msg.batt_temp,
+    inv_msg.tran_temp,
+    inv_msg.fet_temp,
+    inv_msg.ac_amps_in,
+    inv_msg.ac_amps_out,
+    inv_msg.ac_hz);
+  return 0;
+}
+
+
 void loop() {
+  // first check for mag device updates since these stream in all the time
+  char mag_inv_packet[MAGNET_INV_PACKET_LEN];
+  memset(mag_inv_packet, 0, MAGNET_INV_PACKET_LEN);
+  int magnet_ret = -6;
+  magnet_ret = magnet_read_inv_msg(mag_inv_packet, MAGNET_INV_PACKET_LEN);
+  if (magnet_ret == 0) {
+    magnet_interp_inv_msg(mag_status_inv, mag_inv_packet, MAGNET_INV_PACKET_LEN);
+    mag_status_last_ms = millis();
+    analogWrite(PIN_MAG_IND, 127, 5);  // 50% 5Hz blink effect
+  }
+  else {
+    digitalWrite(PIN_MAG_IND, PinState::LOW);  // on no blink
+  }
+  // then request mate updates on action interval
   int mate_scan_retries = 0;
   int mate_status_retries = 0;
   // skip the rest if we haven't reach an action interval yet
@@ -241,13 +410,19 @@ void loop() {
       "\"mate_status_mx_cnt_err\": %d, "
       "\"mate_status_mx\": \"0x%s\", "
       "\"mate_status_retries\": %d, "
-      "\"mate_status_last_ms\": %ld"
+      "\"mate_status_last_ms\": %ld, "
+      "\"magnet_ok_cnt\": %d, "
+      "\"magnet_bad_cnt:\" %d, "
+      "\"magnet_nc_cnt:\" %d "
+      "\"magnet_dat_cnt:\" %d, "
+      "\"magnet_q_cnt:\" %d"
     "}",
     millis(),
     mate_devices_found, mate_scan_retries,
     mate_status_mx_cnt_rx, mate_status_mx_cnt_err,
     mate_status_mx_hex, mate_status_retries,
-    mate_status_last_ms
+    mate_status_last_ms,
+    magnet_ok_cnt, magnet_bad_cnt, magnet_nc_cnt, magnet_dat_cnt, magnet_q_cnt
   );
   spark::Log.info("mate_monitor_stats (len %d):", strlen(mate_monitor_stats));
   spark::Log.print(mate_monitor_stats);  // to print over 200 chars
@@ -255,13 +430,22 @@ void loop() {
   spark::Log.info("mate_status_mx (len %d):", strlen(mate_status_mx));
   spark::Log.print(mate_status_mx);  // to print over 200 chars
   spark::Log.print("\n");
+  spark::Log.info("mag_status_inv (len %d):", strlen(mag_status_inv));
+  spark::Log.print(mag_status_inv);  // to print over 200 chars
+  spark::Log.print("\n");
   // cloud update at a slower rate
   if (now_ms - cloud_update_last_ms < cloud_update_int_ms) {
     Particle.publish("fw-mate-net-monitor-status", mate_monitor_stats);
     spark::Log.info("Particle.publish(\"fw-mate-net-monitor-status\", ...) done");
+    // publish mate status if we got a successful update
     if (mate_status_retries >= 0) {
       Particle.publish("mate-status-mx", mate_status_mx);
       spark::Log.info("Particle.publish(\"mate-status-mx\", ...) done");
+    }
+    // publish mag status if we got an update within timeout
+    if (now_ms - mag_status_last_ms < mag_status_old_ms) {
+      Particle.publish("mag-status-inv", mag_status_inv);
+      spark::Log.info("Particle.publish(\"mag-status-inv\", ...) done");
     }
   }
   return;
