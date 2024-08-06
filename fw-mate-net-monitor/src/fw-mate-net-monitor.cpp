@@ -19,6 +19,7 @@
 // using a MAX3100 SPI UART instead
 void setup();
 int mate_bus_scan();
+void mate_mx_status_unpack(uint8_t *mate_status_buf, char *mx_status_buf, system_tick_t update_ms);
 int mate_mx_status ();
 void loop();
 #line 14 "/Users/ihartwig/repos/mate-net-monitor/fw-mate-net-monitor/src/fw-mate-net-monitor.ino"
@@ -75,6 +76,7 @@ int mate_status_mx_cnt_err = 0;
 system_tick_t mate_status_last_ms = 0;  // timestamp of the last status update
 char mate_monitor_stats[PUB_BUFFER_LEN];
 char mate_status_mx_hex[(STATUS_RESP_SIZE*2)+1];  // encode response in hex chars
+char mate_status_mx[PUB_BUFFER_LEN];
 
 
 void setup() {
@@ -145,6 +147,42 @@ int mate_bus_scan() {
 }
 
 
+// unpack the 13 byte (STATUS_RESP_SIZE) MX status response
+// reverse engineering from
+// https://github.com/jorticus/pymate/blob/master/pymate/matenet/mx.py
+void mate_mx_status_unpack(uint8_t *mate_status_buf, char *mx_status_buf, system_tick_t update_ms) {
+  uint8_t *values = mate_status_buf;
+  float bat_current_milli = (float)(values[0] & 0x0F) / 10.0;
+  snprintf(
+    mx_status_buf,
+    PUB_BUFFER_LEN,
+    "{"
+      "\"uptime_ms\": %ld, "
+      "\"mx_bat_ah\": \"%d\", "
+      "\"mx_bat_cur_a\": %.1f, "
+      "\"mx_pv_cur_a\": %.1f, "
+      "\"mx_bat_kwh\": %.1f, "
+      "\"mx_aux_mode_state\": \"0x%x\", "
+      "\"mx_status\": \"0x%x\", "
+      "\"mx_errors\": \"0x%x\", "
+      "\"mx_bat_v\": %.1f, "
+      "\"mx_pv_v\": %.1f"
+    "}",
+    update_ms,
+    // The following was determined by poking values at the MATE unit...
+    ((values[0] & 0x70) >> 4) | values[4],  // bat Ah - ignore bit7 (if 0, MATE hides the AH reading)
+    (float)((128 + (int8_t)values[2]) % 256) + bat_current_milli,  // bat current A
+    (float)((128 + (int8_t)values[1]) % 256),  // pv current A
+    (float)((values[3] << 8) | values[8]) / 10.0, //  kWh
+    values[5],
+    values[6],
+    values[7],
+    (float)SWAPENDIAN_16(*(uint16_t *)(&values[9])) / 10.0,
+    (float)SWAPENDIAN_16(*(uint16_t *)(&values[11])) / 10.0
+  );
+}
+
+
 // gathers a new MX Charger status and transcribes that to ascii-hex
 // when one is on a known port set by mate_port_mx.
 // returns retries used until new status or MATE_RETRIES is exceeded or -1
@@ -174,8 +212,9 @@ int mate_mx_status () {
   }
   for (int i = 0; i < STATUS_RESP_SIZE; i++) {
     snprintf(((char *)(&mate_status_mx_hex[i*2])), 3, "%02x", mate_status_buf[i]);
-  }
-  // null terminator added by last snprintf
+  }  // null terminator added by last snprintf
+  // convert status response to json 
+  mate_mx_status_unpack(mate_status_buf, mate_status_mx, mate_status_last_ms);
   spark::Log.trace("mate_mx_status(): exiting after %d retries", retries_used);
   return retries_used;
 }
@@ -204,7 +243,7 @@ void loop() {
   // publish MX Charger status - with or without response
   // approx strlen 236~300 chars
   snprintf(
-    (char *)&mate_monitor_stats,
+    mate_monitor_stats,
     PUB_BUFFER_LEN,
     "{"
       "\"uptime_ms\": %ld, "
@@ -225,10 +264,17 @@ void loop() {
   spark::Log.info("mate_monitor_stats (len %d):", strlen(mate_monitor_stats));
   spark::Log.print(mate_monitor_stats);  // to print over 200 chars
   spark::Log.print("\n");
+  spark::Log.info("mate_status_mx (len %d):", strlen(mate_status_mx));
+  spark::Log.print(mate_status_mx);  // to print over 200 chars
+  spark::Log.print("\n");
   // cloud update at a slower rate
   if (now_ms - cloud_update_last_ms < cloud_update_int_ms) {
     Particle.publish("fw-mate-net-monitor-status", mate_monitor_stats);
     spark::Log.info("Particle.publish(\"fw-mate-net-monitor-status\", ...) done");
+    if (mate_status_retries >= 0) {
+      Particle.publish("mate-status-mx", mate_status_mx);
+      spark::Log.info("Particle.publish(\"mate-status-mx\", ...) done");
+    }
   }
   return;
 }
