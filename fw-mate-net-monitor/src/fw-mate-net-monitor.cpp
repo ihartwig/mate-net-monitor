@@ -55,7 +55,7 @@ SYSTEM_MODE(SEMI_AUTOMATIC);
 SYSTEM_THREAD(ENABLED);
 // event timers - start with negative values for events sooner to startup
 const system_tick_t mate_scan_int_ms = 2000;  // also used for status updates
-const system_tick_t cloud_update_int_ms = 30000;
+const system_tick_t cloud_update_int_ms = 90000;  // free tier: ~2 msgs/min
 const system_tick_t mag_status_old_ms =  1000;
 system_tick_t mate_scan_last_ms = -mate_scan_int_ms;
 system_tick_t cloud_update_last_ms = -cloud_update_int_ms;
@@ -85,6 +85,14 @@ int magnet_bad_cnt;
 int magnet_nc_cnt;
 int magnet_dat_cnt;
 int magnet_q_cnt;
+enum MagNetReturn {
+    Ok = 0,
+    ShortFrame = -1,
+    NotConnected = -2,
+    TooLongFrame = -3,
+    DataInvalid = -5,
+    Unknown = -6,
+};
 typedef struct MagNetInvMsg {
 // Name              Byte   Comments
   uint8_t inv_status;   // 0      See MagInvStatus
@@ -133,7 +141,7 @@ void setup() {
   pinMode(PIN_MAG_RX, INPUT);
   pinMode(PIN_MAG_TX, INPUT);
   pinMode(PIN_MAG_IND, OUTPUT);  // open-drain to vcc
-  pinMode(PIN_MAG_DE, INPUT_PULLUP);  // activate loopback
+  pinMode(PIN_MAG_DE, INPUT_PULLDOWN);  // listen only
   digitalWrite(PIN_MAG_IND, PinState::LOW);  // on no blink
   // analogWrite(PIN_MAG_IND, 127, 5);  // 50% 5Hz blink effect
   Serial1.begin(MAG_UART_BAUD, SERIAL_8N1);
@@ -298,7 +306,7 @@ int magnet_read_inv_msg(char* buf, int buf_len) {
       }
       // too much time between bytes means another dev is talking now; abort
       else if (new_byte_time > last_byte_time + MAGNET_BYTE_TIMEOUT_MS) {
-        return -1; // dropped packet
+        return MagNetReturn::ShortFrame; // dropped packet
       }
       // record the new byte
       buf[buf_i] = new_byte;
@@ -306,21 +314,21 @@ int magnet_read_inv_msg(char* buf, int buf_len) {
       last_byte_time = new_byte_time;
       // check if we have a complete packet
       if(buf_i == MAGNET_INV_PACKET_LEN) {
-        return 0; // filled packet
+        return MagNetReturn::Ok; // filled packet
       }
       else if (buf_i >= MAGNET_INV_PACKET_LEN) {
-        return -3; // oops! stop the overflow
+        return MagNetReturn::TooLongFrame; // oops! stop the overflow
       }
       // else keep looking for bytes
     }
     // let the loop move forward if we're not finding anything
     else if (new_byte_time > last_byte_time + MAGNET_NC_TIMEOUT_MS) {
-      return -2;
+      return MagNetReturn::NotConnected;
     }
     // else: keep trying to read
     // break;
   } // end while
-  return -3;
+  return MagNetReturn::Unknown;
 }
 
 
@@ -342,7 +350,7 @@ int magnet_interp_inv_msg(char* buf, char* inv_status, int buf_len) {
 
   // sanity check this packet data
   if(inv_msg.inv_model != MAGNET_INV_MODEL) {
-    return -5;
+    return MagNetReturn::DataInvalid;
   }
 
   // convert to json string format
@@ -384,12 +392,27 @@ void loop() {
   int magnet_ret = -6;
   magnet_ret = magnet_read_inv_msg(mag_inv_packet, MAGNET_INV_PACKET_LEN);
   if (magnet_ret == 0) {
-    magnet_interp_inv_msg(mag_status_inv, mag_inv_packet, MAGNET_INV_PACKET_LEN);
+    magnet_ret = magnet_interp_inv_msg(mag_inv_packet, mag_status_inv, MAGNET_INV_PACKET_LEN);
     mag_status_last_ms = millis();
     analogWrite(PIN_MAG_IND, 127, 5);  // 50% 5Hz blink effect
+    magnet_ok_cnt++;
   }
   else {
     digitalWrite(PIN_MAG_IND, PinState::LOW);  // on no blink
+    switch (magnet_ret) {
+    case MagNetReturn::ShortFrame:  // dropped packet
+      magnet_bad_cnt++;
+      break;
+    case MagNetReturn::NotConnected:  // not connected timeout
+      magnet_nc_cnt++;
+      break;
+    case MagNetReturn::DataInvalid:  // data invalid - wrong inverter model
+      magnet_dat_cnt++;
+      break;
+    default: // we don't know what's happening anymore
+      magnet_q_cnt++;
+      break;
+    }
   }
   // then request mate updates on action interval
   int mate_scan_retries = 0;
@@ -447,20 +470,22 @@ void loop() {
   spark::Log.info("mag_status_inv (len %d):", strlen(mag_status_inv));
   spark::Log.print(mag_status_inv);  // to print over 200 chars
   spark::Log.print("\n");
+  spark::Log.info(String::format("now_ms-cloud_update_last_ms: %ld, cloud_update_int_ms: %ld", now_ms-cloud_update_last_ms, cloud_update_int_ms));
   // cloud update at a slower rate
-  if (now_ms - cloud_update_last_ms < cloud_update_int_ms) {
-    Particle.publish("fw-mate-net-monitor-status", mate_monitor_stats);
-    spark::Log.info("Particle.publish(\"fw-mate-net-monitor-status\", ...) done");
+  if (now_ms - cloud_update_last_ms >= cloud_update_int_ms && Particle.connected()) {
+    auto pub_ret = Particle.publish("fw-mate-net-monitor-status", mate_monitor_stats);
+    spark::Log.info("Particle.publish(\"fw-mate-net-monitor-status\", ...): %d", !!pub_ret);
     // publish mate status if we got a successful update
     if (mate_status_retries >= 0) {
-      Particle.publish("mate-status-mx", mate_status_mx);
-      spark::Log.info("Particle.publish(\"mate-status-mx\", ...) done");
+      auto pub_ret = Particle.publish("mate-status-mx", mate_status_mx);
+      spark::Log.info("Particle.publish(\"mate-status-mx\", ...): %d", !!pub_ret);
     }
     // publish mag status if we got an update within timeout
     if (now_ms - mag_status_last_ms < mag_status_old_ms) {
-      Particle.publish("mag-status-inv", mag_status_inv);
-      spark::Log.info("Particle.publish(\"mag-status-inv\", ...) done");
+      auto pub_ret = Particle.publish("mag-status-inv", mag_status_inv);
+      spark::Log.info("Particle.publish(\"mag-status-inv\", ...): %d", !!pub_ret);
     }
+    cloud_update_last_ms = now_ms;
   }
   return;
 }
